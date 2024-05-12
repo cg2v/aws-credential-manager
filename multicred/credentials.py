@@ -22,38 +22,97 @@ class ExpiredCredentialsError(MultiCredError):
     pass
 
 
-@dataclass
+@dataclass(frozen=True)
 class AwsIdentity:
-    """Class to represent the identity of the AWS role assumed by the credentials."""
-    aws_identity: str
-    aws_account_id: str = field(init=False, hash=False, compare=False)
-    aws_role_id: str
-    aws_role_name: str = field(init=False, hash=False, compare=False)
-    aws_role_session_name: str | None = field(
-        init=False, hash=False, compare=False)
+    aws_identity: str = field(repr=False)
+    _arn_components: list[str] = field(init=False, repr=False, compare=False)
+    _resource_components: list[str] = field(
+        init=False, repr=False, compare=False)
+    aws_account_id: str = field(init=False, compare=False)
+    cred_type: str = field(init=False, compare=False)
+    cred_path: str = field(init=False, compare=False)
 
     def __post_init__(self):
-        self.aws_account_id = self.aws_identity.split(':')[4]
-        self.aws_role_name = self.aws_identity.split('/')[-1]
-        self.aws_role_session_name = self.aws_identity.split(':')[1]
+        if not self.aws_identity.startswith('arn:aws:'):
+            raise ValueError('Invalid AWS identity')
+        elements = self.aws_identity.split(':')
+        if len(elements) != 6:
+            raise ValueError('Invalid AWS identity')
+        object.__setattr__(self, '_arn_components',  elements[4:])
+        object.__setattr__(self, '_resource_components',
+                           elements[5].split('/'))
+        object.__setattr__(self, 'aws_account_id', elements[4])
+        object.__setattr__(self, 'cred_type', self._resource_components[0])
+        object.__setattr__(self, 'cred_path',
+                           '/'.join(self._resource_components[1:]))
+
+
+@dataclass(frozen=True)
+class AwsRoleIdentity(AwsIdentity):
+    """Class to represent the identity of the AWS role assumed by the credentials."""
+    aws_role_id: str
+    aws_role_name: str = field(init=False, compare=False)
+    aws_role_session_name: str
+
+    def __post_init__(self):
+        super().__post_init__()
+        if ':sts:' not in self.aws_identity:
+            raise ValueError('Invalid AWS assumed role identity')
+        if self.cred_type != 'assumed-role':
+            raise ValueError('Invalid AWS assumed role identity')
+        if self._resource_components[2] != self.aws_role_session_name:
+            raise ValueError('Inconsistent AWS assumed role identity')
+        object.__setattr__(self, 'aws_role_name', self._resource_components[1])
 
     @classmethod
     def from_caller_identity(cls, identity: 'GetCallerIdentityResponseTypeDef'):
         aws_identity = identity['Arn']
         userid = identity['UserId']
         aws_role_id = userid.split(':')[0]
+        aws_role_session_name = userid.split(':')[1]
 
-        return cls(aws_identity=aws_identity, aws_role_id=aws_role_id)
+        return cls(aws_identity=aws_identity, aws_role_id=aws_role_id, aws_role_session_name=aws_role_session_name)
+
+
+@dataclass(frozen=True)
+class AwsUserIdentity(AwsIdentity):
+    """Class to represent the identity of the AWS user represented by the credentials."""
+    aws_user_id: str
+    aws_user_name: str = field(init=False, compare=False)
+
+    def __post_init__(self):
+        super().__post_init__()
+        if self._arn_components[2] != 'iam':
+            raise ValueError('Invalid AWS identity')
+        if self.cred_type != 'user':
+            raise ValueError('Invalid AWS identity')
+        if self._resource_components[1] != self.aws_user_id:
+            raise ValueError('Invalid AWS identity')
+        object.__setattr__(self, 'aws_user_name', self._resource_components[1])
+
+    @classmethod
+    def from_caller_identity(cls, identity: 'GetCallerIdentityResponseTypeDef'):
+        aws_identity = identity['Arn']
+        userid = identity['UserId']
+        aws_user_id = userid.split(':')[1]
+
+        return cls(aws_identity=aws_identity, aws_user_id=aws_user_id)
+
+
+def import_identity(identity: 'GetCallerIdentityResponseTypeDef') -> AwsIdentity:
+    """Factory function to create an AwsIdentity object from a boto3 GetCallerIdentity response."""
+    aws_identity = identity['Arn']
+    if aws_identity.startswith('arn:aws:sts::'):
+        return AwsRoleIdentity.from_caller_identity(identity)
+    return AwsUserIdentity.from_caller_identity(identity)
 
 
 @dataclass
 class Credentials:
-    """Class to represent AWS credentials and the identity of the role assumed by the credentials."""
+    """Class to represent AWS credentials and the identity of the role represented by the credentials."""
     aws_access_key_id: str
     aws_secret_access_key: str
     aws_session_token: str | None = None
-    aws_expiration: datetime.datetime = field(
-        init=False, hash=False, compare=False)
     aws_identity: AwsIdentity | None = field(
         init=False, hash=False, compare=False)
 
@@ -63,10 +122,7 @@ class Credentials:
                           aws_secret_access_key=self.aws_secret_access_key,
                           aws_session_token=self.aws_session_token)
         identity = client.get_caller_identity()
-        self.aws_identity = AwsIdentity.from_caller_identity(identity)
-
-    def is_expired(self):
-        return self.aws_expiration is not None and self.aws_expiration < datetime.datetime.now()
+        self.aws_identity = import_identity(identity)
 
     def is_valid(self):
         return self.aws_access_key_id is not None and self.aws_secret_access_key is not None
