@@ -3,7 +3,6 @@ from typing import TYPE_CHECKING
 from dataclasses import dataclass, field
 import datetime
 from configparser import ConfigParser
-from botocore import exceptions
 from boto3 import session
 
 if TYPE_CHECKING:
@@ -124,12 +123,7 @@ class Credentials:
         identity = client.get_caller_identity()
         self.aws_identity = import_identity(identity)
 
-    def is_valid(self):
-        return self.aws_access_key_id is not None and self.aws_secret_access_key is not None
-
     def get_boto3_credentials(self):
-        if not self.is_valid():
-            raise exceptions.PartialCredentialsError(provider='multicred')
         return {
             'aws_access_key_id': self.aws_access_key_id,
             'aws_secret_access_key': self.aws_secret_access_key,
