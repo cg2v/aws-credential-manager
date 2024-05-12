@@ -113,7 +113,7 @@ class Credentials:
     aws_access_key_id: str
     aws_secret_access_key: str
     aws_session_token: str | None = None
-    aws_identity: AwsIdentity | None = field(
+    aws_identity: AwsIdentity = field(
         init=False, hash=False, compare=False)
 
     def __post_init__(self):
