@@ -25,6 +25,7 @@ class ExpiredCredentialsError(MultiCredError):
 @dataclass(frozen=True)
 class AwsIdentity:
     aws_identity: str = field(repr=False)
+    aws_userid : str
     _arn_components: list[str] = field(init=False, repr=False, compare=False)
     _resource_components: list[str] = field(
         init=False, repr=False, compare=False)
@@ -50,7 +51,6 @@ class AwsIdentity:
 @dataclass(frozen=True)
 class AwsRoleIdentity(AwsIdentity):
     """Class to represent the identity of the AWS role assumed by the credentials."""
-    aws_role_id: str
     aws_role_name: str = field(init=False, compare=False)
     aws_role_session_name: str
 
@@ -71,13 +71,12 @@ class AwsRoleIdentity(AwsIdentity):
         aws_role_id = userid.split(':')[0]
         aws_role_session_name = userid.split(':')[1]
 
-        return cls(aws_identity=aws_identity, aws_role_id=aws_role_id, aws_role_session_name=aws_role_session_name)
+        return cls(aws_identity=aws_identity, aws_userid=aws_role_id, aws_role_session_name=aws_role_session_name)
 
 
 @dataclass(frozen=True)
 class AwsUserIdentity(AwsIdentity):
     """Class to represent the identity of the AWS user represented by the credentials."""
-    aws_user_id: str
     aws_user_name: str = field(init=False, compare=False)
 
     def __post_init__(self):
@@ -86,17 +85,15 @@ class AwsUserIdentity(AwsIdentity):
             raise ValueError('Invalid AWS identity')
         if self.cred_type != 'user':
             raise ValueError('Invalid AWS identity')
-        if self._resource_components[1] != self.aws_user_id:
-            raise ValueError('Invalid AWS identity')
         object.__setattr__(self, 'aws_user_name', self._resource_components[1])
 
     @classmethod
     def from_caller_identity(cls, identity: 'GetCallerIdentityResponseTypeDef'):
         aws_identity = identity['Arn']
         userid = identity['UserId']
-        aws_user_id = userid.split(':')[1]
+        aws_user_id = userid.split(':')[0]
 
-        return cls(aws_identity=aws_identity, aws_user_id=aws_user_id)
+        return cls(aws_identity=aws_identity, aws_userid=aws_user_id)
 
 
 def import_identity(identity: 'GetCallerIdentityResponseTypeDef') -> AwsIdentity:
@@ -106,7 +103,7 @@ def import_identity(identity: 'GetCallerIdentityResponseTypeDef') -> AwsIdentity
         return AwsRoleIdentity.from_caller_identity(identity)
     return AwsUserIdentity.from_caller_identity(identity)
 
-UNKNOWN_IDENTITY = AwsIdentity(aws_identity='arn:aws:::UNKNOWN:unknown')
+UNKNOWN_IDENTITY = AwsIdentity(aws_identity='arn:aws:::UNKNOWN:unknown', aws_userid='UNKNOWN')
 @dataclass
 class Credentials:
     """Class to represent AWS credentials and the identity of the role represented by the credentials."""
