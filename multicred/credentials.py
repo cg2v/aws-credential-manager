@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING
 from dataclasses import dataclass, field
 import datetime
 from configparser import ConfigParser
+import botocore.exceptions
 from boto3 import session
 
 if TYPE_CHECKING:
@@ -105,7 +106,7 @@ def import_identity(identity: 'GetCallerIdentityResponseTypeDef') -> AwsIdentity
         return AwsRoleIdentity.from_caller_identity(identity)
     return AwsUserIdentity.from_caller_identity(identity)
 
-
+UNKNOWN_IDENTITY = AwsIdentity(aws_identity='arn:aws:::UNKNOWN:unknown')
 @dataclass
 class Credentials:
     """Class to represent AWS credentials and the identity of the role represented by the credentials."""
@@ -114,14 +115,25 @@ class Credentials:
     aws_session_token: str | None = None
     aws_identity: AwsIdentity = field(
         init=False, hash=False, compare=False)
-
+    is_expired: bool = field(init=False, hash=False, compare=False)
+    is_valid: bool = field(init=False, hash=False, compare=False)
     def __post_init__(self):
         s = session.Session()
-        client = s.client('sts', aws_access_key_id=self.aws_access_key_id,
-                          aws_secret_access_key=self.aws_secret_access_key,
-                          aws_session_token=self.aws_session_token)
-        identity = client.get_caller_identity()
-        self.aws_identity = import_identity(identity)
+        try:
+            client = s.client('sts', aws_access_key_id=self.aws_access_key_id,
+                              aws_secret_access_key=self.aws_secret_access_key,
+                              aws_session_token=self.aws_session_token)
+            identity = client.get_caller_identity()
+        except botocore.exceptions.ClientError as e:
+            self.aws_identity = UNKNOWN_IDENTITY
+            self.is_valid = False
+            if e.response['Error']['Code'] == 'ExpiredToken': # type: ignore
+                self.is_expired = True
+        else:
+            self.is_valid = True
+            self.is_expired = False
+            self.aws_identity = import_identity(identity)
+
 
     def get_boto3_credentials(self):
         return {
