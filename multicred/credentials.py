@@ -9,19 +9,25 @@ from boto3 import session
 if TYPE_CHECKING:
     from mypy_boto3_sts.type_defs import GetCallerIdentityResponseTypeDef
 
+
 class MultiCredError(Exception):
     pass
+
+
 class MissingCredentialsError(MultiCredError):
     pass
+
+
 class ExpiredCredentialsError(MultiCredError):
     pass
+
 
 @dataclass
 class AwsIdentity:
     """Class to represent the identity of the AWS role assumed by the credentials."""
     aws_identity: str
     aws_account_id: str = field(init=False, hash=False, compare=False)
-    aws_role_id : str
+    aws_role_id: str
     aws_role_name: str = field(init=False, hash=False, compare=False)
     aws_role_session_name: str | None = field(
         init=False, hash=False, compare=False)
@@ -48,13 +54,14 @@ class Credentials:
     aws_session_token: str | None = None
     aws_expiration: datetime.datetime = field(
         init=False, hash=False, compare=False)
-    aws_identity: AwsIdentity | None = field(init=False, hash=False, compare=False)
+    aws_identity: AwsIdentity | None = field(
+        init=False, hash=False, compare=False)
 
     def __post_init__(self):
         s = session.Session()
         client = s.client('sts', aws_access_key_id=self.aws_access_key_id,
-                                            aws_secret_access_key=self.aws_secret_access_key,
-                                            aws_session_token=self.aws_session_token)
+                          aws_secret_access_key=self.aws_secret_access_key,
+                          aws_session_token=self.aws_session_token)
         identity = client.get_caller_identity()
         self.aws_identity = AwsIdentity.from_caller_identity(identity)
 
@@ -80,7 +87,8 @@ class Credentials:
         if not config.has_section(profile_name):
             raise MissingCredentialsError(
                 f"Profile {profile_name} not found in {shared_credentials_file}")
-        access_key_id = config.get(profile_name, 'aws_access_key_id', fallback=None)
+        access_key_id = config.get(
+            profile_name, 'aws_access_key_id', fallback=None)
         secret_access_key = config.get(
             profile_name, 'aws_secret_access_key', fallback=None)
         session_token = config.get(
