@@ -20,6 +20,7 @@ class AwsIdentityStorage(Base):
     arn : Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
     aws_account_id : Mapped[int ]= mapped_column(ForeignKey('aws_account.id'), nullable=False)
     aws_account = relationship('AwsAccountStorage', backref='identities')
+    userid : Mapped[str] = mapped_column(String(20), nullable=True)
     cred_type : Mapped[str] = mapped_column(String(20), nullable=False)
     name : Mapped[str] = mapped_column(String(100), nullable=False)
     created_at :  Mapped[datetime.datetime] = mapped_column(default=datetime.datetime.now)
