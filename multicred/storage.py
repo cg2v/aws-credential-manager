@@ -38,7 +38,7 @@ class Storage:
             except IntegrityError:
                 return session.query(model).filter_by(**kwargs).one(), True
 
-    def import_credentials(self, creds: credentials.Credentials):
+    def import_credentials(self, creds: credentials.Credentials, force=False):
         session = self.session()
         identity = creds.aws_identity
         account, _ = self.get_one_or_create(
@@ -55,6 +55,13 @@ class Storage:
             stored_id, _ = self.get_one_or_create(
                 session, schema.AwsIdentityStorage, aws_account=account,
                 cred_type=str(identity.cred_type), name=identity.aws_user_name,
+                create_method_kwargs={'arn': identity.aws_identity, 'userid': identity.aws_userid})
+        elif identity.cred_type == credentials.CredentialType.UNKNOWN:
+            if not force:
+                raise ValueError('Credential is invalid and not indexable')
+            stored_id, _ = self.get_one_or_create(
+                session, schema.AwsIdentityStorage, aws_account=account,
+                cred_type=str(identity.cred_type), name=identity.aws_account_id,
                 create_method_kwargs={'arn': identity.aws_identity, 'userid': identity.aws_userid})
         else:
             raise ValueError('Unknown cred_type')
