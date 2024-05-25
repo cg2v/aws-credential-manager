@@ -3,7 +3,6 @@
 import argparse
 import io
 import json
-import configparser
 import chardet
 
 from multicred import storage
@@ -60,13 +59,7 @@ if ARGS.add or ARGS.test:
                 aws_role_session_name=userid_parts[1])
     elif ARGS.ini_cred:
         TEXTIO = get_textstream(ARGS.ini_cred)
-        FILEPARSER = configparser.ConfigParser()
-        FILEPARSER.read_file(TEXTIO)
-        DEFSECT = FILEPARSER.sections()[0]
-        CRED = credentials.Credentials(
-            aws_access_key_id=FILEPARSER[DEFSECT]['aws_access_key_id'],
-            aws_secret_access_key=FILEPARSER[DEFSECT]['aws_secret_access_key'],
-            aws_session_token=FILEPARSER[DEFSECT]['aws_session_token'])
+        CRED = credentials.Credentials.from_shared_credentials_file(TEXTIO)
     else:
         raise ValueError('No credential source')
     print(CRED)
