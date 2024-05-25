@@ -73,7 +73,7 @@ class Storage:
         session.commit()
         session.close()
 
-    def get_credentials(self, identity: credentials.AwsIdentity):
+    def get_credentials(self, identity: credentials.AwsIdentity) -> credentials.Credentials | None:
         with self.session() as session:
             if identity.cred_type == 'role':
                 assert isinstance(identity, credentials.AwsRoleIdentity)
@@ -86,8 +86,11 @@ class Storage:
             else:
                 raise ValueError('Unknown cred_type')
             credential = session.query(schema.AwsCredentialStorage).filter_by(
-                aws_identity=stored_id).one()
+                aws_identity=stored_id).order_by(
+                    schema.AwsCredentialStorage.created_at.desc()).first()
 
+        if credential is None:
+            return None
         rv = credentials.Credentials(
             aws_access_key_id=credential.aws_access_key_id,
             aws_secret_access_key=credential.aws_secret_access_key,
@@ -97,15 +100,18 @@ class Storage:
                 aws_identity=identity.aws_identity, aws_userid=identity.aws_userid)
         return rv
 
-    def get_credentials_by_arn(self, arn: str):
+    def get_credentials_by_arn(self, arn: str) -> credentials.Credentials | None:
         with self.session() as session:
             try:
                 stored_id = session.query(schema.AwsIdentityStorage).filter_by(
                     arn=arn).one()
                 credential = session.query(schema.AwsCredentialStorage).filter_by(
-                    aws_identity=stored_id).one()
+                    aws_identity=stored_id).order_by(
+                        schema.AwsCredentialStorage.created_at.desc()).first()
             except NoResultFound:
                 return None
+        if credential is None:
+            return None
         rv = credentials.Credentials(
             aws_access_key_id=credential.aws_access_key_id,
             aws_secret_access_key=credential.aws_secret_access_key,
@@ -132,7 +138,7 @@ class Storage:
             rv.aws_identity = credentials.AwsIdentity(
                 aws_identity=stored_id.arn, aws_userid=stored_id.userid)
         return rv
-    
+
     def get_credentials_by_account_and_role_name(self, account_id: str, role_name: str):
         with self.session() as session:
             try:
@@ -141,9 +147,12 @@ class Storage:
                 stored_id = session.query(schema.AwsIdentityStorage).filter_by(
                     aws_account_id=account.id, name=role_name).one()
                 credential = session.query(schema.AwsCredentialStorage).filter_by(
-                    aws_identity_id=stored_id.id).one()
+                    aws_identity_id=stored_id.id).order_by(
+                        schema.AwsCredentialStorage.created_at.desc()).first()
             except NoResultFound:
                 return None
+        if credential is None:
+            return None
         rv = credentials.Credentials(
             aws_access_key_id=credential.aws_access_key_id,
             aws_secret_access_key=credential.aws_secret_access_key,
