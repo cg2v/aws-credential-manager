@@ -81,8 +81,8 @@ class AwsUserIdentity(AwsIdentity):
 
     def __post_init__(self):
         super().__post_init__()
-        if self._arn_components[2] != 'iam':
-            raise ValueError('Invalid AWS identity')
+        if ':iam:' not in self.aws_identity:
+            raise ValueError('Invalid AWS user identity')
         if self.cred_type != 'user':
             raise ValueError('Invalid AWS identity')
         object.__setattr__(self, 'aws_user_name', self._resource_components[1])
