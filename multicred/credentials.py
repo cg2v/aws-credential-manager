@@ -2,8 +2,8 @@
 from typing import TYPE_CHECKING
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-import datetime
 from configparser import ConfigParser
+from enum import Enum
 import botocore.exceptions
 from boto3 import session
 
@@ -22,6 +22,12 @@ class MissingCredentialsError(MultiCredError):
 class ExpiredCredentialsError(MultiCredError):
     pass
 
+class CredentialType(Enum):
+    """Enum to represent the type of AWS credentials."""
+    USER = 'user'
+    ROLE = 'role'
+    ASSUMED_ROLE = 'role'
+    UNKNOWN = 'unknown'
 
 @dataclass(frozen=True)
 class AwsIdentity:
@@ -31,7 +37,7 @@ class AwsIdentity:
     _resource_components: list[str] = field(
         init=False, repr=False, compare=False)
     aws_account_id: str = field(init=False, compare=False)
-    cred_type: str = field(init=False, compare=False)
+    cred_type: CredentialType = field(init=False, compare=False)
     cred_path: str = field(init=False, compare=False)
 
     def __post_init__(self):
@@ -44,7 +50,7 @@ class AwsIdentity:
         object.__setattr__(self, '_resource_components',
                            elements[5].split('/'))
         object.__setattr__(self, 'aws_account_id', elements[4])
-        object.__setattr__(self, 'cred_type', self._resource_components[0])
+        object.__setattr__(self, 'cred_type', CredentialType[self._resource_components[0].upper().replace('-', '_')])
         object.__setattr__(self, 'cred_path',
                            '/'.join(self._resource_components[1:]))
 
@@ -59,7 +65,7 @@ class AwsRoleIdentity(AwsIdentity):
         super().__post_init__()
         if ':sts:' not in self.aws_identity:
             raise ValueError('Invalid AWS assumed role identity')
-        if self.cred_type != 'assumed-role':
+        if self.cred_type != CredentialType.ROLE:
             raise ValueError('Invalid AWS assumed role identity')
         if self._resource_components[2] != self.aws_role_session_name:
             raise ValueError('Inconsistent AWS assumed role identity')
@@ -84,7 +90,7 @@ class AwsUserIdentity(AwsIdentity):
         super().__post_init__()
         if ':iam:' not in self.aws_identity:
             raise ValueError('Invalid AWS user identity')
-        if self.cred_type != 'user':
+        if self.cred_type != CredentialType.USER:
             raise ValueError('Invalid AWS identity')
         object.__setattr__(self, 'aws_user_name', self._resource_components[1])
 
