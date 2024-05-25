@@ -115,6 +115,8 @@ class Credentials:
     is_expired: bool = field(init=False, hash=False, compare=False)
     is_valid: bool = field(init=False, hash=False, compare=False)
     def __post_init__(self):
+        self.is_expired = False
+        self.is_valid = False
         s = session.Session()
         try:
             client = s.client('sts', aws_access_key_id=self.aws_access_key_id,
@@ -123,12 +125,10 @@ class Credentials:
             identity = client.get_caller_identity()
         except botocore.exceptions.ClientError as e:
             self.aws_identity = UNKNOWN_IDENTITY
-            self.is_valid = False
             if e.response['Error']['Code'] == 'ExpiredToken': # type: ignore
                 self.is_expired = True
         else:
             self.is_valid = True
-            self.is_expired = False
             self.aws_identity = import_identity(identity)
 
 
