@@ -1,5 +1,6 @@
 """Classes describing AWS credentials and the identity embedded in the credentials."""
 from typing import TYPE_CHECKING
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 import datetime
 from configparser import ConfigParser
@@ -140,9 +141,12 @@ class Credentials:
         }
 
     @classmethod
-    def from_shared_credentials_file(cls, shared_credentials_file, profile_name='default',):
+    def from_shared_credentials_file(cls, shared_credentials_file: str | Iterable[str], profile_name='default',):
         config = ConfigParser()
-        config.read(shared_credentials_file)
+        if isinstance(shared_credentials_file, str):
+            config.read(shared_credentials_file)
+        else:
+            config.read_file(shared_credentials_file)
         if not config.has_section(profile_name):
             raise MissingCredentialsError(
                 f"Profile {profile_name} not found in {shared_credentials_file}")
