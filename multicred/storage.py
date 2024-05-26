@@ -1,7 +1,7 @@
 from typing import Type
 from sqlalchemy import create_engine, Engine
 from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy.exc import NoResultFound, MultipleResultsFound, IntegrityError
+from sqlalchemy.exc import NoResultFound, IntegrityError
 
 from . import schema
 from . import credentials
