@@ -63,8 +63,6 @@ class AwsRoleIdentity(AwsIdentity):
 
     def __post_init__(self):
         super().__post_init__()
-        if ':sts:' not in self.aws_identity:
-            raise ValueError('Invalid AWS assumed role identity')
         if self.cred_type != CredentialType.ROLE:
             raise ValueError('Invalid AWS assumed role identity')
         if self._resource_components[2] != self.aws_role_session_name:
@@ -88,8 +86,6 @@ class AwsUserIdentity(AwsIdentity):
 
     def __post_init__(self):
         super().__post_init__()
-        if ':iam:' not in self.aws_identity:
-            raise ValueError('Invalid AWS user identity')
         if self.cred_type != CredentialType.USER:
             raise ValueError('Invalid AWS identity')
         object.__setattr__(self, 'aws_user_name', self._resource_components[1])
@@ -106,7 +102,8 @@ class AwsUserIdentity(AwsIdentity):
 def import_identity(identity: 'GetCallerIdentityResponseTypeDef') -> AwsIdentity:
     """Factory function to create an AwsIdentity object from a boto3 GetCallerIdentity response."""
     aws_identity = identity['Arn']
-    if aws_identity.startswith('arn:aws:sts::'):
+    arn_components = aws_identity.split(':')
+    if arn_components[5].startswith('assumed-role'):
         return AwsRoleIdentity.from_caller_identity(identity)
     return AwsUserIdentity.from_caller_identity(identity)
 
