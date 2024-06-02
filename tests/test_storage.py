@@ -68,3 +68,13 @@ def test_multiple_creds_for_role(multiple_creds_storage):
         test_creds.aws_identity.aws_account_id, test_creds.aws_identity.aws_role_name)
     assert creds.aws_access_key_id == test_creds.aws_access_key_id
     assert creds.aws_secret_access_key == test_creds.aws_secret_access_key
+
+def test_find_identity_by_arn(role_creds_storage):
+    stored_id = role_creds_storage.test_object.get_identity_by_arn(
+        'arn:aws:sts::123456789012:assumed-role/test_role/test_session')
+    assert stored_id.arn == 'arn:aws:sts::123456789012:assumed-role/test_role/test_session'
+
+def test_find_identity_by_account_and_role_name(role_creds_storage):
+    stored_id = role_creds_storage.test_object.get_identity_by_account_and_role_name(
+        '123456789012', 'test_role')
+    assert stored_id.arn == 'arn:aws:sts::123456789012:assumed-role/test_role/test_session'
