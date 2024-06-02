@@ -5,7 +5,7 @@ import json
 
 from sqlalchemy.exc import SQLAlchemyError
 
-from . import storage
+from . import resolver
 
 DB_PATH = os.path.expanduser('~/.aws/multicred.db')
 def main():
@@ -20,7 +20,7 @@ def main():
     parser.add_argument('--debug', help='Enable debug logging', action='store_true')
     args = parser.parse_args()
 
-    iolayer = storage.Storage(DB_PATH)
+    iolayer = resolver.Resolver(DB_PATH)
     try:
         if args.arn:
             creds = iolayer.get_credentials_by_arn(args.arn)

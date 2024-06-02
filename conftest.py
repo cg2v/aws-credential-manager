@@ -7,6 +7,7 @@ from moto import mock_aws
 
 from multicred.credentials  import Credentials, AwsRoleIdentity, AwsUserIdentity
 from multicred.storage import Storage
+from multicred.resolver import Resolver
 
 @fixture
 def role_identity():
@@ -88,6 +89,10 @@ def unknown_credentials():
 def empty_storage():
     return Storage('sqlite:///:memory:')
 
+@fixture
+def empty_resolver():
+    return Resolver('sqlite:///:memory:')
+
 @dataclass
 class StorageWrapper:
     test_object: Storage
@@ -105,14 +110,31 @@ def user_creds_storage(user_credentials):
     storage.import_credentials(user_credentials.test_object, user_credentials.userid)
     return StorageWrapper(storage, user_credentials)
 
+@dataclass
+class ResolverWrapper:
+    test_object: Resolver
+    credentials: CredentialsWrapper
+
 @fixture
-def multiple_creds_storage(role_credentials, user_credentials, other_role_credentials):
-    storage = Storage('sqlite:///:memory:')
-    storage.import_credentials(other_role_credentials.test_object, other_role_credentials.userid)
+def role_creds_resolver(role_credentials):
+    resolver = Resolver('sqlite:///:memory:')
+    resolver._storage.import_credentials(role_credentials.test_object, role_credentials.userid)
+    return ResolverWrapper(resolver, role_credentials)
+
+@fixture
+def user_creds_resolver(user_credentials):
+    resolver = Resolver('sqlite:///:memory:')
+    resolver._storage.import_credentials(user_credentials.test_object, user_credentials.userid)
+    return ResolverWrapper(resolver, user_credentials)
+
+@fixture
+def multiple_creds_resolver(role_credentials, user_credentials, other_role_credentials):
+    resolver = Resolver('sqlite:///:memory:')
+    resolver._storage.import_credentials(other_role_credentials.test_object, other_role_credentials.userid)
     sleep(5)
-    storage.import_credentials(role_credentials.test_object, role_credentials.userid)
-    storage.import_credentials(user_credentials.test_object, user_credentials.userid)
-    return StorageWrapper(storage, role_credentials)
+    resolver._storage.import_credentials(role_credentials.test_object, role_credentials.userid)
+    resolver._storage.import_credentials(user_credentials.test_object, user_credentials.userid)
+    return ResolverWrapper(resolver, role_credentials)
 
 @fixture
 def user_may_assume_role(user_credentials, role_credentials):

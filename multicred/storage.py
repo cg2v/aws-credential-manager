@@ -99,11 +99,6 @@ class Storage:
                 aws_identity=identity.arn, aws_userid=identity.userid)
         return rv
 
-    def get_credentials_by_arn(self, arn: str) -> credentials.Credentials | None:
-        identity = self.get_identity_by_arn(arn)
-        if identity is None:
-            return None
-        return self.get_identity_credentials(identity)
 
     def get_credentials_by_key(self, access_key: str):
         with self.session() as session:
@@ -133,12 +128,6 @@ class Storage:
             except NoResultFound:
                 return None
         return stored_id
-
-    def get_credentials_by_account_and_role_name(self, account_id: str, role_name: str):
-        identity = self.get_identity_by_account_and_role_name(account_id, role_name)
-        if identity is None:
-            return None
-        return self.get_identity_credentials(identity)
 
     def get_parent_identity(self, identity: schema.AwsIdentityStorage):
         with self.session() as session:
