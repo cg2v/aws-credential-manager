@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 from time import sleep
+import json
 from pytest import fixture
 import boto3
-import json
 from moto import mock_aws
 
 from multicred.credentials  import Credentials, AwsRoleIdentity, AwsUserIdentity
