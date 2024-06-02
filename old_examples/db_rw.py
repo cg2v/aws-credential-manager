@@ -5,7 +5,8 @@ import io
 import json
 import chardet
 
-from multicred import storage
+from multicred import get_storage
+from multicred import resolver
 from multicred import credentials
 
 PARSER = argparse.ArgumentParser(description='Test multicred storage')
@@ -42,7 +43,8 @@ def get_textstream(file: io.BufferedReader) -> io.TextIOWrapper:
     file.seek(0)
     return io.TextIOWrapper(file, encoding=detected['encoding'])
 
-STORAGE = storage.Storage("sqlite://")
+STORAGE = get_storage('sqlite:///:memory:')
+RESOLVER = resolver.DBResolver(STORAGE)
 if ARGS.add or ARGS.test:
     if ARGS.json_cred:
         TEXTIO = get_textstream(ARGS.json_cred)
@@ -72,15 +74,15 @@ if ARGS.add:
 
 elif ARGS.get:
     if ARGS.key:
-        CRED = STORAGE.get_credentials_by_key(ARGS.key)
+        CRED = RESOLVER.get_credentials_by_key(ARGS.key)
     elif ARGS.arn:
-        CRED = STORAGE.get_credentials_by_arn(ARGS.arn)
+        CRED = RESOLVER.get_credentials_by_arn(ARGS.arn)
     else:
         raise ValueError('No credential source')
     dump_credential(CRED)
 elif ARGS.test:
     STORAGE.import_credentials(CRED)
-    CRED = STORAGE.get_credentials_by_key(CRED.aws_access_key_id)
+    CRED = RESOLVER.get_credentials_by_key(CRED.aws_access_key_id)
     dump_credential(CRED)
-    assert STORAGE.get_credentials_by_arn(ARN) == CRED
-    assert STORAGE.get_credentials_by_account_and_role_name(ACCOUNT, ROLE_NM) == CRED
+    assert RESOLVER.get_credentials_by_arn(ARN) == CRED
+    assert RESOLVER.get_credentials_by_account_and_role_name(ACCOUNT, ROLE_NM) == CRED
