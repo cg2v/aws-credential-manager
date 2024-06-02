@@ -4,7 +4,7 @@ import os
 import io
 import chardet
 
-from . import storage
+from . import get_storage
 from . import credentials
 
 def get_textstream(file: io.BufferedReader) -> io.TextIOWrapper:
@@ -35,7 +35,7 @@ def main():
     if args.debug:
         print(creds)
         sys.exit(0)
-    iolayer = storage.Storage(DB_PATH)
+    iolayer = get_storage(DB_PATH)
     iolayer.import_credentials(creds)
 
 if __name__ == '__main__':

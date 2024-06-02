@@ -1,0 +1,33 @@
+from typing import Protocol, Tuple
+from . import credentials, schema
+
+class Resolver(Protocol):
+    def get_credentials_by_arn(self, arn: str) -> credentials.Credentials | None:
+        ...
+    def get_credentials_by_key(self, access_key: str) -> credentials.Credentials | None:
+        ...
+    def get_credentials_by_account_and_role_name(self, account_id: str, role_name: str) \
+        -> credentials.Credentials | None:
+        ...
+
+class Storage(Protocol):
+    def get_identity_by_arn(self, arn: str) -> schema.AwsIdentityStorage | None:
+        ...
+    def get_identity_by_account_and_role_name(self, account_id: str, role_name: str) \
+        -> schema.AwsIdentityStorage | None:
+        ...
+    def get_parent_identity(self, identity: schema.AwsIdentityStorage) \
+        -> Tuple[schema.AwsIdentityStorage, str] | tuple[None, None]:
+        ...
+    def construct_identity_relationship(self, creds: credentials.Credentials,
+                                  parent_creds: credentials.Credentials,
+                                  role_arn: str) \
+                                    -> None:
+        ...
+    def import_credentials(self, creds: credentials.Credentials, *, force: bool = False) -> None:
+        ...
+    def get_identity_credentials(self, identity: schema.AwsIdentityStorage) \
+        -> credentials.Credentials | None:
+        ...
+    def get_credentials_by_key(self, access_key: str) -> credentials.Credentials | None:
+        ...

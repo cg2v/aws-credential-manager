@@ -1,13 +1,13 @@
 import boto3
 
-from . import storage
+from . import interfaces
 from . import credentials
 
-class Resolver:
-    _storage: storage.Storage
+class DBResolver(interfaces.Resolver):
+    _storage: interfaces.Storage
 
-    def __init__(self, db_uri: str):
-        self._storage = storage.Storage(db_uri)
+    def __init__(self, storage: interfaces.Storage):
+        self._storage = storage
 
     def get_credentials_by_arn(self, arn: str) -> credentials.Credentials | None:
         identity = self._storage.get_identity_by_arn(arn)

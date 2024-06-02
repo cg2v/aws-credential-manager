@@ -7,7 +7,7 @@ from . import schema
 from . import credentials
 
 
-class Storage:
+class DBStorage:
     engine: Engine
     # https://github.com/sqlalchemy/sqlalchemy/issues/7656
     # not sure why this had to be a string

@@ -6,8 +6,9 @@ import boto3
 from moto import mock_aws
 
 from multicred.credentials  import Credentials, AwsRoleIdentity, AwsUserIdentity
-from multicred.storage import Storage
-from multicred.resolver import Resolver
+from multicred.storage import DBStorage
+from multicred.resolver import DBResolver
+from multicred.interfaces import Storage, Resolver
 
 @fixture
 def role_identity():
@@ -87,11 +88,11 @@ def unknown_credentials():
 
 @fixture
 def empty_storage():
-    return Storage('sqlite:///:memory:')
+    return DBStorage('sqlite:///:memory:')
 
 @fixture
-def empty_resolver():
-    return Resolver('sqlite:///:memory:')
+def empty_resolver(empty_storage):
+    return DBResolver(empty_storage)
 
 @dataclass
 class StorageWrapper:
@@ -100,15 +101,24 @@ class StorageWrapper:
 
 @fixture
 def role_creds_storage(role_credentials):
-    storage = Storage('sqlite:///:memory:')
+    storage = DBStorage('sqlite:///:memory:')
     storage.import_credentials(role_credentials.test_object, role_credentials.userid)
     return StorageWrapper(storage, role_credentials)
 
 @fixture
 def user_creds_storage(user_credentials):
-    storage = Storage('sqlite:///:memory:')
+    storage = DBStorage('sqlite:///:memory:')
     storage.import_credentials(user_credentials.test_object, user_credentials.userid)
     return StorageWrapper(storage, user_credentials)
+
+@fixture
+def multiple_creds_storage(role_credentials, user_credentials, other_role_credentials):
+    storage = DBStorage('sqlite:///:memory:')
+    storage.import_credentials(other_role_credentials.test_object, other_role_credentials.userid)
+    sleep(5)
+    storage.import_credentials(role_credentials.test_object, role_credentials.userid)
+    storage.import_credentials(user_credentials.test_object, user_credentials.userid)
+    return StorageWrapper(storage, role_credentials)
 
 @dataclass
 class ResolverWrapper:
@@ -116,25 +126,19 @@ class ResolverWrapper:
     credentials: CredentialsWrapper
 
 @fixture
-def role_creds_resolver(role_credentials):
-    resolver = Resolver('sqlite:///:memory:')
-    resolver._storage.import_credentials(role_credentials.test_object, role_credentials.userid)
-    return ResolverWrapper(resolver, role_credentials)
+def role_creds_resolver(role_creds_storage):
+    resolver = DBResolver(role_creds_storage.test_object)
+    return ResolverWrapper(resolver, role_creds_storage.credentials)
 
 @fixture
-def user_creds_resolver(user_credentials):
-    resolver = Resolver('sqlite:///:memory:')
-    resolver._storage.import_credentials(user_credentials.test_object, user_credentials.userid)
-    return ResolverWrapper(resolver, user_credentials)
+def user_creds_resolver(user_creds_storage):
+    resolver = DBResolver(user_creds_storage.test_object)
+    return ResolverWrapper(resolver, user_creds_storage.credentials)
 
 @fixture
-def multiple_creds_resolver(role_credentials, user_credentials, other_role_credentials):
-    resolver = Resolver('sqlite:///:memory:')
-    resolver._storage.import_credentials(other_role_credentials.test_object, other_role_credentials.userid)
-    sleep(5)
-    resolver._storage.import_credentials(role_credentials.test_object, role_credentials.userid)
-    resolver._storage.import_credentials(user_credentials.test_object, user_credentials.userid)
-    return ResolverWrapper(resolver, role_credentials)
+def multiple_creds_resolver(multiple_creds_storage):
+    resolver = DBResolver(multiple_creds_storage.test_object)
+    return ResolverWrapper(resolver, multiple_creds_storage.credentials)
 
 @fixture
 def user_may_assume_role(user_credentials, role_credentials):
@@ -170,10 +174,25 @@ class DerivedCredsStorageWrapper:
 
 @fixture
 def derived_creds_storage(user_credentials, role_credentials, user_may_assume_role):
-    storage = Storage('sqlite:///:memory:')
+    storage = DBStorage('sqlite:///:memory:')
     storage.import_credentials(user_credentials.test_object, user_credentials.userid)
     storage.import_credentials(role_credentials.test_object, role_credentials.userid)
     role_arn = 'arn:aws:iam::123456789012:role/test_role'
     storage.construct_identity_relationship(role_credentials.test_object,
                                             user_credentials.test_object, role_arn)
     return DerivedCredsStorageWrapper(storage, user_credentials, role_credentials, role_arn)
+
+@dataclass
+class DerivedCredsResolverWrapper:
+    test_object: Resolver
+    user_creds: CredentialsWrapper
+    role_creds: CredentialsWrapper
+    role_arn: str
+
+@fixture
+def derived_creds_resolver(derived_creds_storage):
+    return DerivedCredsResolverWrapper(
+        DBResolver(derived_creds_storage.test_object),
+        derived_creds_storage.user_creds,
+        derived_creds_storage.role_creds,
+        derived_creds_storage.role_arn)
