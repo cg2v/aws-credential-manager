@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from time import sleep
 from pytest import fixture
 import boto3
+import json
 from moto import mock_aws
 
 from multicred.credentials  import Credentials, AwsRoleIdentity, AwsUserIdentity
@@ -112,3 +113,45 @@ def multiple_creds_storage(role_credentials, user_credentials, other_role_creden
     storage.import_credentials(role_credentials.test_object, role_credentials.userid)
     storage.import_credentials(user_credentials.test_object, user_credentials.userid)
     return StorageWrapper(storage, role_credentials)
+
+@fixture
+def user_may_assume_role(user_credentials, role_credentials):
+    with mock_aws():
+        iamclient = boto3.client('iam')
+        iamclient.create_policy(
+            PolicyName='test_policy',
+            PolicyDocument=json.dumps(
+                {
+                    "Version": "2012-10-17", 
+                    "Statement": [
+                        {
+                            "Effect": "Allow", 
+                            "Action": "sts:AssumeRole", 
+                            "Resource": role_credentials.test_object.aws_identity.aws_identity,
+                        }
+                    ]
+                }
+            )
+        )
+        iamclient.attach_user_policy(
+            UserName=user_credentials.test_object.aws_identity.aws_user_name,
+            PolicyArn='arn:aws:iam::123456789012:policy/test_policy'
+        )
+        yield
+
+@dataclass
+class DerivedCredsStorageWrapper:
+    test_object: Storage
+    user_creds: CredentialsWrapper
+    role_creds: CredentialsWrapper
+    role_arn: str
+
+@fixture
+def derived_creds_storage(user_credentials, role_credentials, user_may_assume_role):
+    storage = Storage('sqlite:///:memory:')
+    storage.import_credentials(user_credentials.test_object, user_credentials.userid)
+    storage.import_credentials(role_credentials.test_object, role_credentials.userid)
+    role_arn = 'arn:aws:iam::123456789012:role/test_role'
+    storage.construct_identity_relationship(role_credentials.test_object,
+                                            user_credentials.test_object, role_arn)
+    return DerivedCredsStorageWrapper(storage, user_credentials, role_credentials, role_arn)

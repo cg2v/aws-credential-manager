@@ -2,6 +2,7 @@ from pytest import raises
 
 from sqlalchemy.exc import NoResultFound
 from multicred.schema import AwsAccountStorage, AwsIdentityStorage, AwsCredentialStorage
+from multicred.credentials import AwsRoleIdentity
 
 def test_empty_storage(empty_storage):
     with empty_storage.session() as session:
@@ -78,3 +79,16 @@ def test_find_identity_by_account_and_role_name(role_creds_storage):
     stored_id = role_creds_storage.test_object.get_identity_by_account_and_role_name(
         '123456789012', 'test_role')
     assert stored_id.arn == 'arn:aws:sts::123456789012:assumed-role/test_role/test_session'
+
+def test_find_parent_identity(derived_creds_storage):
+    target_role_creds = derived_creds_storage.role_creds.test_object
+    target_role_identity = target_role_creds.aws_identity
+    assert target_role_identity.cred_type.value == 'role'
+    assert isinstance(target_role_identity, AwsRoleIdentity)
+
+    target_stored_id = derived_creds_storage.test_object.get_identity_by_account_and_role_name(
+        target_role_identity.aws_account_id, target_role_identity.aws_role_name)
+    stored_id, role_arn = derived_creds_storage.test_object.get_parent_identity(
+        target_stored_id)
+    assert stored_id.arn == derived_creds_storage.user_creds.test_object.aws_identity.aws_identity
+    assert role_arn.startswith('arn:aws:iam::123456789012:role/test_role')

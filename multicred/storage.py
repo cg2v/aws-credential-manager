@@ -139,3 +139,27 @@ class Storage:
         if identity is None:
             return None
         return self.get_identity_credentials(identity)
+
+    def get_parent_identity(self, identity: schema.AwsIdentityStorage):
+        with self.session() as session:
+            try:
+                parent = session.query(schema.AwsRoleIdentitySourceStorage).filter_by(
+                    target_aws_identity_id=identity.id).one()
+                stored_id = session.query(schema.AwsIdentityStorage).filter_by(
+                    id=parent.parent_aws_identity_id).one()
+            except NoResultFound:
+                return None, None
+        return stored_id, parent.role_arn
+
+    def construct_identity_relationship(self, creds: credentials.Credentials, parent_creds:
+                                        credentials.Credentials, role_arn: str):
+        stored_target_id = self.get_identity_by_arn(creds.aws_identity.aws_identity)
+        stored_parent_id = self.get_identity_by_arn(parent_creds.aws_identity.aws_identity)
+        if stored_target_id is None or stored_parent_id is None:
+            raise ValueError('Identity not found')
+        with self.session() as session:
+            stored_relationship = schema.AwsRoleIdentitySourceStorage(
+                target_aws_identity=stored_target_id, parent_aws_identity=stored_parent_id,
+                role_arn=role_arn)
+            session.add(stored_relationship)
+            session.commit()
