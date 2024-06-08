@@ -98,6 +98,17 @@ class AwsUserIdentity(AwsIdentity):
 
         return cls(aws_identity=aws_identity, aws_userid=aws_user_id)
 
+def to_role_identity(aws_identity: AwsIdentity) -> AwsRoleIdentity:
+    """Function to convert an AwsIdentity object to an AwsRoleIdentity object."""
+    if aws_identity.cred_type == CredentialType.ROLE:
+        if isinstance(aws_identity, AwsRoleIdentity):
+            return aws_identity
+        role_session_name = aws_identity.cred_path.split('/')[-1]
+        return AwsRoleIdentity(
+            aws_identity=aws_identity.aws_identity,
+            aws_userid=aws_identity.aws_userid,
+            aws_role_session_name=role_session_name)
+    raise ValueError('Not a role identity')
 
 def import_identity(identity: 'GetCallerIdentityResponseTypeDef') -> AwsIdentity:
     """Factory function to create an AwsIdentity object from a boto3 GetCallerIdentity response."""
