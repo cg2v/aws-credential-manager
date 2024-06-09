@@ -1,13 +1,10 @@
 from dataclasses import dataclass
-from typing import Tuple, TYPE_CHECKING
+from typing import Tuple
 import boto3
 
 from . import interfaces
 from . import schema
 from . import credentials
-
-if TYPE_CHECKING:
-    from mypy_boto3_sts.client import STSClient
 
 @dataclass(frozen=True)
 class ResolverState:
