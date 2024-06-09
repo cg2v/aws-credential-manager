@@ -15,11 +15,17 @@ class MultiCredError(Exception):
     pass
 
 
-class MissingCredentialsError(MultiCredError):
+class MissingCredentialsError(MultiCredError, KeyError):
     pass
 
 
 class ExpiredCredentialsError(MultiCredError):
+    pass
+
+class WrongIdentityTypeError(MultiCredError, TypeError):
+    pass
+
+class BadIdentityError(MultiCredError, ValueError):
     pass
 
 class CredentialType(Enum):
@@ -42,10 +48,10 @@ class AwsIdentity:
 
     def __post_init__(self):
         if not self.aws_identity.startswith('arn:aws:'):
-            raise ValueError('Invalid AWS identity')
+            raise BadIdentityError('Invalid AWS identity')
         elements = self.aws_identity.split(':')
         if len(elements) != 6:
-            raise ValueError('Invalid AWS identity')
+            raise BadIdentityError('Invalid AWS identity')
         object.__setattr__(self, '_arn_components',  elements[4:])
         object.__setattr__(self, '_resource_components',
                            elements[5].split('/'))
@@ -64,9 +70,9 @@ class AwsRoleIdentity(AwsIdentity):
     def __post_init__(self):
         super().__post_init__()
         if self.cred_type != CredentialType.ROLE:
-            raise ValueError('Invalid AWS assumed role identity')
+            raise WrongIdentityTypeError('Invalid AWS assumed role identity')
         if self._resource_components[2] != self.aws_role_session_name:
-            raise ValueError('Inconsistent AWS assumed role identity')
+            raise BadIdentityError('Inconsistent AWS assumed role identity')
         object.__setattr__(self, 'aws_role_name', self._resource_components[1])
 
     @classmethod
@@ -87,7 +93,7 @@ class AwsUserIdentity(AwsIdentity):
     def __post_init__(self):
         super().__post_init__()
         if self.cred_type != CredentialType.USER:
-            raise ValueError('Invalid AWS identity')
+            raise WrongIdentityTypeError('Invalid AWS identity')
         object.__setattr__(self, 'aws_user_name', self._resource_components[1])
 
     @classmethod
@@ -108,7 +114,7 @@ def to_role_identity(aws_identity: AwsIdentity) -> AwsRoleIdentity:
             aws_identity=aws_identity.aws_identity,
             aws_userid=aws_identity.aws_userid,
             aws_role_session_name=role_session_name)
-    raise ValueError('Not a role identity')
+    raise WrongIdentityTypeError('Not a role identity')
 
 def import_identity(identity: 'GetCallerIdentityResponseTypeDef') -> AwsIdentity:
     """Factory function to create an AwsIdentity object from a boto3 GetCallerIdentity response."""
