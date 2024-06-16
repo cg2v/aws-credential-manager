@@ -3,12 +3,11 @@ from typing import Tuple
 import boto3
 
 from . import interfaces
-from . import schema
 from . import credentials
 
 @dataclass(frozen=True)
 class ResolverState:
-    identity: schema.AwsIdentityStorage
+    identity: interfaces.IdentityHandle
     role_name: str
 
 class DBResolver(interfaces.Resolver):
@@ -17,7 +16,7 @@ class DBResolver(interfaces.Resolver):
     def __init__(self, storage: interfaces.Storage):
         self._storage = storage
 
-    def _build_path(self, identity: schema.AwsIdentityStorage) -> Tuple[list[ResolverState], credentials.Credentials | None]:
+    def _build_path(self, identity: interfaces.IdentityHandle) -> Tuple[list[ResolverState], credentials.Credentials | None]:
         rv = []
         while True:
             creds = self._storage.get_identity_credentials(identity)
@@ -48,7 +47,7 @@ class DBResolver(interfaces.Resolver):
             self._storage.import_credentials(creds)
         return creds
 
-    def _get_credentials_for_identity(self, identity: schema.AwsIdentityStorage) -> credentials.Credentials | None:
+    def _get_credentials_for_identity(self, identity: interfaces.IdentityHandle) -> credentials.Credentials | None:
         rv = self._storage.get_identity_credentials(identity)
         if rv and rv.is_valid:
             return rv

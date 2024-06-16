@@ -5,7 +5,24 @@ from sqlalchemy.exc import NoResultFound, IntegrityError
 
 from . import schema
 from . import credentials
+from .interfaces import IdentityHandle
 
+class DBStorageIdentityHandle:
+    data: schema.AwsIdentityStorage
+    def __init__(self, data: schema.AwsIdentityStorage):
+        self.data = data
+    @property
+    def account_id(self) -> int:
+        return self.data.aws_account_id
+    @property
+    def arn(self) -> str:
+        return self.data.arn
+    @property
+    def cred_type(self) -> credentials.CredentialType:
+        return credentials.CredentialType(self.data.cred_type)
+    @property
+    def name(self) -> str:
+        return self.data.name
 
 class DBStorage:
     engine: Engine
@@ -73,19 +90,22 @@ class DBStorage:
         session.commit()
         session.close()
 
-    def get_identity_by_arn(self, arn: str) -> schema.AwsIdentityStorage | None:
+    def get_identity_by_arn(self, arn: str) -> IdentityHandle | None:
         with self.session() as session:
             try:
                 stored_id = session.query(schema.AwsIdentityStorage).filter_by(
                     arn=arn).one()
             except NoResultFound:
                 return None
-        return stored_id
+        return DBStorageIdentityHandle(stored_id)
 
-    def get_identity_credentials(self, identity: schema.AwsIdentityStorage) -> credentials.Credentials | None:
+    def get_identity_credentials(self, identity: IdentityHandle) -> credentials.Credentials | None:
+        if not isinstance(identity, DBStorageIdentityHandle):
+            raise ValueError('Identity is not from this storage')
+        db_id = identity.data
         with self.session() as session:
             credential = session.query(schema.AwsCredentialStorage).filter_by(
-                aws_identity=identity).order_by(
+                aws_identity=db_id).order_by(
                     schema.AwsCredentialStorage.created_at.desc()).first()
 
         if credential is None:
@@ -96,7 +116,7 @@ class DBStorage:
             aws_session_token=credential.aws_session_token)
         if not rv.is_valid:
             rv.aws_identity = credentials.AwsIdentity(
-                aws_identity=identity.arn, aws_userid=identity.userid)
+                aws_identity=identity.arn, aws_userid=db_id.userid)
         return rv
 
 
@@ -118,7 +138,7 @@ class DBStorage:
                 aws_identity=stored_id.arn, aws_userid=stored_id.userid)
         return rv
 
-    def get_identity_by_account_and_role_name(self, account_id: str, role_name: str) -> schema.AwsIdentityStorage | None:
+    def get_identity_by_account_and_role_name(self, account_id: str, role_name: str) -> IdentityHandle | None:
         with self.session() as session:
             try:
                 account = session.query(schema.AwsAccountStorage).filter_by(
@@ -127,18 +147,21 @@ class DBStorage:
                     aws_account_id=account.id, name=role_name).one()
             except NoResultFound:
                 return None
-        return stored_id
+        return DBStorageIdentityHandle(stored_id)
 
-    def get_parent_identity(self, identity: schema.AwsIdentityStorage):
+    def get_parent_identity(self, identity: IdentityHandle):
+        if not isinstance(identity, DBStorageIdentityHandle):
+            raise ValueError('Identity is not from this storage')
+        db_id = identity.data
         with self.session() as session:
             try:
                 parent = session.query(schema.AwsRoleIdentitySourceStorage).filter_by(
-                    target_aws_identity_id=identity.id).one()
+                    target_aws_identity_id=db_id.id).one()
                 stored_id = session.query(schema.AwsIdentityStorage).filter_by(
                     id=parent.parent_aws_identity_id).one()
             except NoResultFound:
                 return None, None
-        return stored_id, parent.role_arn
+        return DBStorageIdentityHandle(stored_id), parent.role_arn
 
     def construct_identity_relationship(self, creds: credentials.Credentials, parent_creds:
                                         credentials.Credentials, role_arn: str):
