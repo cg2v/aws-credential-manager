@@ -179,3 +179,25 @@ class DBStorage:
                 role_arn=role_arn)
             session.add(stored_relationship)
             session.commit()
+
+    def delete_credentials_by_key(self, access_key: str):
+        with self.session() as session:
+            try:
+                credential = session.query(schema.AwsCredentialStorage).filter_by(
+                    aws_access_key_id=access_key).one()
+                session.delete(credential)
+                session.commit()
+            except NoResultFound:
+                pass
+
+    def purge_identity_credentials(self, identity: IdentityHandle):
+        if not isinstance(identity, DBStorageIdentityHandle):
+            raise ValueError('Identity is not from this storage')
+        db_id = identity.data
+        with self.session() as session:
+            try:
+                session.query(schema.AwsCredentialStorage).filter_by(
+                    aws_identity=db_id).delete()
+                session.commit()
+            except NoResultFound:
+                pass

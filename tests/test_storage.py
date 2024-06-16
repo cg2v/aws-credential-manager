@@ -52,3 +52,48 @@ def test_find_parent_identity(derived_creds_storage):
         target_stored_id)
     assert stored_id.arn == derived_creds_storage.user_creds.test_object.aws_identity.aws_identity
     assert role_arn.startswith('arn:aws:iam::123456789012:role/test_role')
+
+def test_delete_credentials(multiple_creds_storage):
+    test_creds = multiple_creds_storage.credentials.test_object
+    test_identity = multiple_creds_storage.test_object.get_identity_by_arn(
+        test_creds.aws_identity.aws_identity)
+    assert test_identity is not None
+    # before the delete, both access keys should be present, and the identity's creds
+    # should be the same
+    cred_check = multiple_creds_storage.test_object.get_credentials_by_key(
+        test_creds.aws_access_key_id)
+    assert cred_check is not None
+    cred_check_id = multiple_creds_storage.test_object.get_identity_credentials(test_identity)
+    assert cred_check_id is not None
+    assert cred_check_id.aws_access_key_id == test_creds.aws_access_key_id
+    multiple_creds_storage.test_object.delete_credentials_by_key(test_creds.aws_access_key_id)
+    # After the delete, the first access key should be gone, but the identity's creds should 
+    # still be present with a different access key
+    cred_check = multiple_creds_storage.test_object.get_credentials_by_key(
+        test_creds.aws_access_key_id)
+    assert cred_check is None
+    cred_check_id = multiple_creds_storage.test_object.get_identity_credentials(test_identity)
+    assert cred_check_id is not None
+    assert cred_check_id.aws_access_key_id != test_creds.aws_access_key_id
+
+def test_purge_credentials(multiple_creds_storage):
+    test_creds = multiple_creds_storage.credentials.test_object
+    test_identity = multiple_creds_storage.test_object.get_identity_by_arn(
+        test_creds.aws_identity.aws_identity)
+    assert test_identity is not None
+    # before the delete, both access keys should be present, and the identity's creds
+    # should be the same
+    cred_check = multiple_creds_storage.test_object.get_credentials_by_key(
+        test_creds.aws_access_key_id)
+    assert cred_check is not None
+    cred_check_id = multiple_creds_storage.test_object.get_identity_credentials(test_identity)
+    assert cred_check_id is not None
+    assert cred_check_id.aws_access_key_id == test_creds.aws_access_key_id
+    multiple_creds_storage.test_object.purge_identity_credentials(test_identity)
+    # After the delete, the first access key should be gone, and the identity's creds should
+    # be gone as well
+    cred_check = multiple_creds_storage.test_object.get_credentials_by_key(
+        test_creds.aws_access_key_id)
+    assert cred_check is None
+    cred_check_id = multiple_creds_storage.test_object.get_identity_credentials(test_identity)
+    assert cred_check_id is None
