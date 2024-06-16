@@ -41,3 +41,19 @@ def test_multiple_creds_for_role(multiple_creds_resolver):
         test_creds.aws_identity.aws_account_id, test_creds.aws_identity.aws_role_name)
     assert creds.aws_access_key_id == test_creds.aws_access_key_id
     assert creds.aws_secret_access_key == test_creds.aws_secret_access_key
+
+def test_role_resolver_get_derived(derived_creds_resolver):
+    test_creds = derived_creds_resolver.role_creds.test_object
+    storage = derived_creds_resolver.storage.test_object
+    creds = derived_creds_resolver.test_object.get_credentials_by_arn(
+        test_creds.aws_identity.aws_identity)
+    assert creds.aws_access_key_id == test_creds.aws_access_key_id
+    assert creds.aws_secret_access_key == test_creds.aws_secret_access_key
+    test_identity = derived_creds_resolver.storage.test_object.get_identity_by_arn(
+        test_creds.aws_identity.aws_identity)
+    assert test_identity is not None
+    storage.delete_credentials_by_key(test_creds.aws_access_key_id)
+    creds = derived_creds_resolver.test_object.get_credentials_by_arn(
+        test_creds.aws_identity.aws_identity)
+    assert creds is not None
+    assert creds.aws_access_key_id != test_creds.aws_access_key_id
