@@ -21,7 +21,6 @@ class DBResolver(interfaces.Resolver):
         while True:
             creds = self._storage.get_identity_credentials(identity)
             if creds is not None:
-                rv.append(ResolverState(identity=identity, role_name=''))
                 break
             parent, role_name = self._storage.get_parent_identity(identity)
             if parent is None:
