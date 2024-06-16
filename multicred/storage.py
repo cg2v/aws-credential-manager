@@ -165,10 +165,14 @@ class DBStorage:
 
     def construct_identity_relationship(self, creds: credentials.Credentials, parent_creds:
                                         credentials.Credentials, role_arn: str):
-        stored_target_id = self.get_identity_by_arn(creds.aws_identity.aws_identity)
-        stored_parent_id = self.get_identity_by_arn(parent_creds.aws_identity.aws_identity)
-        if stored_target_id is None or stored_parent_id is None:
+        stored_target = self.get_identity_by_arn(creds.aws_identity.aws_identity)
+        stored_parent = self.get_identity_by_arn(parent_creds.aws_identity.aws_identity)
+        if stored_target is None or stored_parent is None:
             raise ValueError('Identity not found')
+        assert isinstance(stored_target, DBStorageIdentityHandle)
+        assert isinstance(stored_parent, DBStorageIdentityHandle)
+        stored_target_id = stored_target.data
+        stored_parent_id = stored_parent.data
         with self.session() as session:
             stored_relationship = schema.AwsRoleIdentitySourceStorage(
                 target_aws_identity=stored_target_id, parent_aws_identity=stored_parent_id,
