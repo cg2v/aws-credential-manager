@@ -185,6 +185,7 @@ def derived_creds_storage(user_credentials, role_credentials, user_may_assume_ro
 @dataclass
 class DerivedCredsResolverWrapper:
     test_object: Resolver
+    storage: StorageWrapper
     user_creds: CredentialsWrapper
     role_creds: CredentialsWrapper
     role_arn: str
@@ -193,6 +194,7 @@ class DerivedCredsResolverWrapper:
 def derived_creds_resolver(derived_creds_storage):
     return DerivedCredsResolverWrapper(
         DBResolver(derived_creds_storage.test_object),
+        derived_creds_storage,
         derived_creds_storage.user_creds,
         derived_creds_storage.role_creds,
         derived_creds_storage.role_arn)
