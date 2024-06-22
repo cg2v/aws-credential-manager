@@ -13,6 +13,7 @@ setup(
         'console_scripts': [
             'multicred-import = multicred.importer:main',
             'multicred-get = multicred.credhelper:main',
+            'multicred-manage = multicred.manager:main',
         ],
     },
 )

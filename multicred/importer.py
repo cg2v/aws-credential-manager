@@ -6,12 +6,21 @@ import chardet
 
 from . import get_storage
 from . import credentials
+from .interfaces import Storage
 
 def get_textstream(file: io.BufferedReader) -> io.TextIOWrapper:
     '''Convert a binary file to a text stream'''
     detected = chardet.detect(file.read())
     file.seek(0)
     return io.TextIOWrapper(file, encoding=detected['encoding'])
+
+def do_import(filename: str, iolayer: Storage, profile: str):
+    '''Import credentials from a file'''
+    with open(filename, 'rb') as rawfile:
+        textfile = get_textstream(rawfile)
+        creds = credentials.Credentials.from_shared_credentials_file(
+            textfile, profile_name=profile)
+    iolayer.import_credentials(creds)
 
 DB_PATH = os.path.expanduser('~/.aws/multicred.db')
 def main():
@@ -27,16 +36,7 @@ def main():
         print('No credentials file specified', file=sys.stderr)
         sys.exit(1)
 
-    rawfile = open(args.cred_file, 'rb')
-    textfile = get_textstream(rawfile)
-    creds = credentials.Credentials.from_shared_credentials_file(
-        textfile, profile_name=args.profile)
-
-    if args.debug:
-        print(creds)
-        sys.exit(0)
-    iolayer = get_storage(DB_PATH)
-    iolayer.import_credentials(creds)
+    do_import(args.cred_file, get_storage(DB_PATH), args.profile)
 
 if __name__ == '__main__':
     main()
