@@ -13,7 +13,7 @@ def main():
     fetchgroup = parser.add_mutually_exclusive_group(required=True)
     fetchgroup.add_argument('--arn', help='ARN of the identity to fetch credentials for')
     fetchgroup.add_argument('--access-key', help='Access key to fetch credentials for')
-    accountgroup = parser.add_argument_group()
+    accountgroup = fetchgroup.add_argument_group()
     accountgroup.add_argument('--account', help='Account number to fetch credentials for',
                               required=True)
     accountgroup.add_argument('--role', help='Role name to fetch credentials for', required=True)
