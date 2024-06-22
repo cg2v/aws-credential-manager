@@ -6,8 +6,8 @@ import boto3
 from moto import mock_aws
 
 from multicred.credentials  import Credentials, AwsRoleIdentity, AwsUserIdentity
-from multicred.storage import DBStorage
-from multicred.resolver import DBResolver
+from multicred.dbstorage import DBStorage
+from multicred.resolver import StorageBasedResolver
 from multicred.interfaces import Storage, Resolver
 
 @fixture
@@ -92,7 +92,7 @@ def empty_storage():
 
 @fixture
 def empty_resolver(empty_storage):
-    return DBResolver(empty_storage)
+    return StorageBasedResolver(empty_storage)
 
 @dataclass
 class StorageWrapper:
@@ -127,17 +127,17 @@ class ResolverWrapper:
 
 @fixture
 def role_creds_resolver(role_creds_storage):
-    resolver = DBResolver(role_creds_storage.test_object)
+    resolver = StorageBasedResolver(role_creds_storage.test_object)
     return ResolverWrapper(resolver, role_creds_storage.credentials)
 
 @fixture
 def user_creds_resolver(user_creds_storage):
-    resolver = DBResolver(user_creds_storage.test_object)
+    resolver = StorageBasedResolver(user_creds_storage.test_object)
     return ResolverWrapper(resolver, user_creds_storage.credentials)
 
 @fixture
 def multiple_creds_resolver(multiple_creds_storage):
-    resolver = DBResolver(multiple_creds_storage.test_object)
+    resolver = StorageBasedResolver(multiple_creds_storage.test_object)
     return ResolverWrapper(resolver, multiple_creds_storage.credentials)
 
 @fixture
@@ -193,7 +193,7 @@ class DerivedCredsResolverWrapper:
 @fixture
 def derived_creds_resolver(derived_creds_storage):
     return DerivedCredsResolverWrapper(
-        DBResolver(derived_creds_storage.test_object),
+        StorageBasedResolver(derived_creds_storage.test_object),
         derived_creds_storage,
         derived_creds_storage.user_creds,
         derived_creds_storage.role_creds,

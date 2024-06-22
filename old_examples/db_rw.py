@@ -44,7 +44,7 @@ def get_textstream(file: io.BufferedReader) -> io.TextIOWrapper:
     return io.TextIOWrapper(file, encoding=detected['encoding'])
 
 STORAGE = get_storage('sqlite:///:memory:')
-RESOLVER = resolver.DBResolver(STORAGE)
+RESOLVER = resolver.StorageBasedResolver(STORAGE)
 if ARGS.add or ARGS.test:
     if ARGS.json_cred:
         TEXTIO = get_textstream(ARGS.json_cred)

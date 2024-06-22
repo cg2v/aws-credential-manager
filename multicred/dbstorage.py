@@ -3,13 +3,13 @@ from sqlalchemy import create_engine, Engine
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.exc import NoResultFound, IntegrityError
 
-from . import schema
+from . import dbschema
 from . import credentials
 from .interfaces import IdentityHandle
 
 class DBStorageIdentityHandle:
-    data: schema.AwsIdentityStorage
-    def __init__(self, data: schema.AwsIdentityStorage):
+    data: dbschema.AwsIdentityStorage
+    def __init__(self, data: dbschema.AwsIdentityStorage):
         self.data = data
     @property
     def account_id(self) -> int:
@@ -32,13 +32,13 @@ class DBStorage:
 
     def __init__(self, db_uri):
         self.engine = create_engine(db_uri)
-        schema.Base.metadata.create_all(self.engine)
+        dbschema.Base.metadata.create_all(self.engine)
         self.session = sessionmaker(bind=self.engine)
 
     # https://stackoverflow.com/a/21146492
     def get_one_or_create(self,
                           session: Session,
-                          model: Type[schema.Base],
+                          model: Type[dbschema.Base],
                           create_method='',
                           create_method_kwargs=None,
                           **kwargs):
@@ -48,7 +48,7 @@ class DBStorage:
             kwargs.update(create_method_kwargs or {})
             try:
                 with session.begin_nested():
-                    created: schema.Base = getattr(
+                    created: dbschema.Base = getattr(
                         model, create_method, model)(**kwargs)
                     session.add(created)
                 return created, False
@@ -59,30 +59,30 @@ class DBStorage:
         session = self.session()
         identity = creds.aws_identity
         account, _ = self.get_one_or_create(
-            session, schema.AwsAccountStorage, account_id=identity.aws_account_id)
-        assert isinstance(account, schema.AwsAccountStorage)
+            session, dbschema.AwsAccountStorage, account_id=identity.aws_account_id)
+        assert isinstance(account, dbschema.AwsAccountStorage)
         if identity.cred_type == credentials.CredentialType.ROLE:
             assert isinstance(identity, credentials.AwsRoleIdentity)
             stored_id, _ = self.get_one_or_create(
-                session, schema.AwsIdentityStorage, aws_account=account,
+                session, dbschema.AwsIdentityStorage, aws_account=account,
                 cred_type=str(identity.cred_type), name=identity.aws_role_name,
                 create_method_kwargs={'arn': identity.aws_identity, 'userid': identity.aws_userid})
         elif identity.cred_type == credentials.CredentialType.USER:
             assert isinstance(identity, credentials.AwsUserIdentity)
             stored_id, _ = self.get_one_or_create(
-                session, schema.AwsIdentityStorage, aws_account=account,
+                session, dbschema.AwsIdentityStorage, aws_account=account,
                 cred_type=str(identity.cred_type), name=identity.aws_user_name,
                 create_method_kwargs={'arn': identity.aws_identity, 'userid': identity.aws_userid})
         elif identity.cred_type == credentials.CredentialType.UNKNOWN:
             if not force:
                 raise ValueError('Credential is invalid and not indexable')
             stored_id, _ = self.get_one_or_create(
-                session, schema.AwsIdentityStorage, aws_account=account,
+                session, dbschema.AwsIdentityStorage, aws_account=account,
                 cred_type=str(identity.cred_type), name=identity.aws_account_id,
                 create_method_kwargs={'arn': identity.aws_identity, 'userid': identity.aws_userid})
         else:
             raise ValueError('Unknown cred_type')
-        credential = schema.AwsCredentialStorage(
+        credential = dbschema.AwsCredentialStorage(
             aws_identity=stored_id, aws_access_key_id=creds.aws_access_key_id,
             aws_secret_access_key=creds.aws_secret_access_key,
             aws_session_token=creds.aws_session_token)
@@ -93,7 +93,7 @@ class DBStorage:
     def get_identity_by_arn(self, arn: str) -> IdentityHandle | None:
         with self.session() as session:
             try:
-                stored_id = session.query(schema.AwsIdentityStorage).filter_by(
+                stored_id = session.query(dbschema.AwsIdentityStorage).filter_by(
                     arn=arn).one()
             except NoResultFound:
                 return None
@@ -104,9 +104,9 @@ class DBStorage:
             raise ValueError('Identity is not from this storage')
         db_id = identity.data
         with self.session() as session:
-            credential = session.query(schema.AwsCredentialStorage).filter_by(
+            credential = session.query(dbschema.AwsCredentialStorage).filter_by(
                 aws_identity=db_id).order_by(
-                    schema.AwsCredentialStorage.created_at.desc()).first()
+                    dbschema.AwsCredentialStorage.created_at.desc()).first()
 
         if credential is None:
             return None
@@ -123,9 +123,9 @@ class DBStorage:
     def get_credentials_by_key(self, access_key: str):
         with self.session() as session:
             try:
-                credential = session.query(schema.AwsCredentialStorage).filter_by(
+                credential = session.query(dbschema.AwsCredentialStorage).filter_by(
                     aws_access_key_id=access_key).one()
-                stored_id = session.query(schema.AwsIdentityStorage).filter_by(
+                stored_id = session.query(dbschema.AwsIdentityStorage).filter_by(
                     id=credential.aws_identity_id).one()
             except NoResultFound:
                 return None
@@ -141,9 +141,9 @@ class DBStorage:
     def get_identity_by_account_and_role_name(self, account_id: str, role_name: str) -> IdentityHandle | None:
         with self.session() as session:
             try:
-                account = session.query(schema.AwsAccountStorage).filter_by(
+                account = session.query(dbschema.AwsAccountStorage).filter_by(
                     account_id=account_id).one()
-                stored_id = session.query(schema.AwsIdentityStorage).filter_by(
+                stored_id = session.query(dbschema.AwsIdentityStorage).filter_by(
                     aws_account_id=account.id, name=role_name).one()
             except NoResultFound:
                 return None
@@ -155,9 +155,9 @@ class DBStorage:
         db_id = identity.data
         with self.session() as session:
             try:
-                parent = session.query(schema.AwsRoleIdentitySourceStorage).filter_by(
+                parent = session.query(dbschema.AwsRoleIdentitySourceStorage).filter_by(
                     target_aws_identity_id=db_id.id).one()
-                stored_id = session.query(schema.AwsIdentityStorage).filter_by(
+                stored_id = session.query(dbschema.AwsIdentityStorage).filter_by(
                     id=parent.parent_aws_identity_id).one()
             except NoResultFound:
                 return None, None
@@ -174,7 +174,7 @@ class DBStorage:
         stored_target_id = stored_target.data
         stored_parent_id = stored_parent.data
         with self.session() as session:
-            stored_relationship = schema.AwsRoleIdentitySourceStorage(
+            stored_relationship = dbschema.AwsRoleIdentitySourceStorage(
                 target_aws_identity=stored_target_id, parent_aws_identity=stored_parent_id,
                 role_arn=role_arn)
             session.add(stored_relationship)
@@ -183,7 +183,7 @@ class DBStorage:
     def delete_credentials_by_key(self, access_key: str):
         with self.session() as session:
             try:
-                credential = session.query(schema.AwsCredentialStorage).filter_by(
+                credential = session.query(dbschema.AwsCredentialStorage).filter_by(
                     aws_access_key_id=access_key).one()
                 session.delete(credential)
                 session.commit()
@@ -196,7 +196,7 @@ class DBStorage:
         db_id = identity.data
         with self.session() as session:
             try:
-                session.query(schema.AwsCredentialStorage).filter_by(
+                session.query(dbschema.AwsCredentialStorage).filter_by(
                     aws_identity=db_id).delete()
                 session.commit()
             except NoResultFound:

@@ -10,7 +10,7 @@ class ResolverState:
     identity: interfaces.IdentityHandle
     role_name: str
 
-class DBResolver(interfaces.Resolver):
+class StorageBasedResolver(interfaces.Resolver):
     _storage: interfaces.Storage
 
     def __init__(self, storage: interfaces.Storage):

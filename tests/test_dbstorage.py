@@ -1,7 +1,7 @@
 from pytest import raises
 
 from sqlalchemy.exc import NoResultFound
-from multicred.schema import AwsAccountStorage, AwsIdentityStorage, AwsCredentialStorage
+from multicred.dbschema import AwsAccountStorage, AwsIdentityStorage, AwsCredentialStorage
 from multicred.credentials import AwsRoleIdentity
 
 def test_empty_storage(empty_storage):
