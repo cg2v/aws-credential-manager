@@ -180,6 +180,27 @@ class DBStorage:
             session.add(stored_relationship)
             session.commit()
 
+    def remove_identity_relationship(self, identity: IdentityHandle):
+        if not isinstance(identity, DBStorageIdentityHandle):
+            raise ValueError('Identity is not from this storage')
+        db_id = identity.data
+        with self.session() as session:
+            try:
+                session.query(dbschema.AwsRoleIdentitySourceStorage).filter_by(
+                    parent_aws_identity=db_id).one()
+                session.commit()
+            except NoResultFound:
+                pass
+            else:
+                raise ValueError('This identity is a parent identity and cannot be removed')
+            try:
+                stored_id = session.query(dbschema.AwsRoleIdentitySourceStorage).filter_by(
+                    target_aws_identity=db_id).one()
+                session.delete(stored_id)
+                session.commit()
+            except NoResultFound:
+                pass
+
     def delete_credentials_by_key(self, access_key: str):
         with self.session() as session:
             try:

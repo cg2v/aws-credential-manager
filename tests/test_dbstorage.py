@@ -48,10 +48,49 @@ def test_find_parent_identity(derived_creds_storage):
 
     target_stored_id = derived_creds_storage.test_object.get_identity_by_account_and_role_name(
         target_role_identity.aws_account_id, target_role_identity.aws_role_name)
+    assert target_stored_id is not None
+    stored_id, role_arn = derived_creds_storage.test_object.get_parent_identity(
+        target_stored_id)
+    assert stored_id is not None
+    assert stored_id.arn == derived_creds_storage.user_creds.test_object.aws_identity.aws_identity
+    assert role_arn.startswith('arn:aws:iam::123456789012:role/test_role')
+
+def test_find_parent_identity_none(role_creds_storage):
+    target_role_creds = role_creds_storage.credentials.test_object
+    target_role_identity = target_role_creds.aws_identity
+    assert target_role_identity.cred_type.value == 'role'
+    assert isinstance(target_role_identity, AwsRoleIdentity)
+
+    target_stored_id = role_creds_storage.test_object.get_identity_by_account_and_role_name(
+        target_role_identity.aws_account_id, target_role_identity.aws_role_name)
+    assert target_stored_id is not None
+    stored_id, role_arn = role_creds_storage.test_object.get_parent_identity(
+        target_stored_id)
+    assert stored_id is None
+    assert role_arn is None
+
+def test_remove_parent_identity(derived_creds_storage):
+    target_role_creds = derived_creds_storage.role_creds.test_object
+    target_role_identity = target_role_creds.aws_identity
+    assert target_role_identity.cred_type.value == 'role'
+    assert isinstance(target_role_identity, AwsRoleIdentity)
+
+    target_stored_id = derived_creds_storage.test_object.get_identity_by_account_and_role_name(
+        target_role_identity.aws_account_id, target_role_identity.aws_role_name)
+    assert target_stored_id is not None
     stored_id, role_arn = derived_creds_storage.test_object.get_parent_identity(
         target_stored_id)
     assert stored_id.arn == derived_creds_storage.user_creds.test_object.aws_identity.aws_identity
     assert role_arn.startswith('arn:aws:iam::123456789012:role/test_role')
+
+    with raises(ValueError):
+        derived_creds_storage.test_object.remove_identity_relationship(stored_id)
+    derived_creds_storage.test_object.remove_identity_relationship(target_stored_id)
+    stored_id_2, role_arn = derived_creds_storage.test_object.get_parent_identity(
+        target_stored_id)
+    assert stored_id_2 is None
+    assert role_arn is None
+    derived_creds_storage.test_object.remove_identity_relationship(stored_id)
 
 def test_delete_credentials(multiple_creds_storage):
     test_creds = multiple_creds_storage.credentials.test_object
@@ -67,7 +106,7 @@ def test_delete_credentials(multiple_creds_storage):
     assert cred_check_id is not None
     assert cred_check_id.aws_access_key_id == test_creds.aws_access_key_id
     multiple_creds_storage.test_object.delete_credentials_by_key(test_creds.aws_access_key_id)
-    # After the delete, the first access key should be gone, but the identity's creds should 
+    # After the delete, the first access key should be gone, but the identity's creds should
     # still be present with a different access key
     cred_check = multiple_creds_storage.test_object.get_credentials_by_key(
         test_creds.aws_access_key_id)
@@ -75,6 +114,9 @@ def test_delete_credentials(multiple_creds_storage):
     cred_check_id = multiple_creds_storage.test_object.get_identity_credentials(test_identity)
     assert cred_check_id is not None
     assert cred_check_id.aws_access_key_id != test_creds.aws_access_key_id
+    # delete of absent key should not raise an error
+    multiple_creds_storage.test_object.delete_credentials_by_key(test_creds.aws_access_key_id)
+
 
 def test_purge_credentials(multiple_creds_storage):
     test_creds = multiple_creds_storage.credentials.test_object
