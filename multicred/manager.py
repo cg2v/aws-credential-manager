@@ -19,15 +19,12 @@ def build_parser():
     import_parser.add_argument('cred_file', help='File containing credentials',
                                  default=os.environ.get('AWS_SHARED_CREDENTIALS_FILE', None))
     link_parser = subparsers.add_parser('link', help='Link two AWS identities')
-    parent_id_group = link_parser.add_mutually_exclusive_group(required=True)
-    parent_id_group.add_argument('--parent-arn', help='ARN of the parent identity')
-    parent_id_group.add_argument('--parent-access-key', help='Access key of the parent identity')
-    parent_account_group = parent_id_group.add_argument_group()
+    parent_account_group = link_parser.add_argument_group("source credentials")
     parent_account_group.add_argument('--parent-account', help='Account number of the parent identity',
                                       required=True)
     parent_account_group.add_argument('--parent-role', help='Role name of the parent identity',
                                         required=True)
-    link_parser.add_argument('--role-name', help='Role name to assume',
+    link_parser.add_argument('--role-arn', help='ARN of role to assume',
                              required=True)
     unlink_parser = subparsers.add_parser('unlink', help='Unlink an AWS identity')
     unlink_parser.add_argument('--arn', help='ARN of the identity to unlink')
@@ -60,17 +57,8 @@ def do_delete(args: argparse.Namespace, iolayer: Storage):
         iolayer.purge_identity_credentials(identity)
 
 def do_link(args: argparse.Namespace, iolayer: Storage):
-    if args.parent_access_key:
-        parent_creds = iolayer.get_credentials_by_key(args.parent_access_key)
-        if parent_creds is None:
-            print('Parent credentials not found', file=sys.stderr)
-            sys.exit(1)
-        parent_identity = iolayer.get_identity_by_arn(parent_creds.aws_identity.aws_identity)
-    elif args.parent_arn:
-        parent_identity = iolayer.get_identity_by_arn(args.parent_arn)
-    else:
-        parent_identity = iolayer.get_identity_by_account_and_role_name(
-            args.parent_account, args.parent_role)
+    parent_identity = iolayer.get_identity_by_account_and_role_name(
+        args.parent_account, args.parent_role)
     if parent_identity is None:
         print('Parent identity not found', file=sys.stderr)
         sys.exit(1)
@@ -83,14 +71,14 @@ def do_link(args: argparse.Namespace, iolayer: Storage):
         sys.exit(1)
     client = boto3.client('sts', **parent_creds.get_boto3_credentials())
     response = client.assume_role(
-        RoleArn=args.role_name,
+        RoleArn=args.role_arn,
         RoleSessionName=parent_identity.name)
     creds = credentials.Credentials(
         aws_access_key_id=response['Credentials']['AccessKeyId'],
         aws_secret_access_key=response['Credentials']['SecretAccessKey'],
         aws_session_token=response['Credentials']['SessionToken'])
     iolayer.import_credentials(creds)
-    iolayer.construct_identity_relationship(parent_creds, creds, args.role_name)
+    iolayer.construct_identity_relationship(parent_creds, creds, args.role_arn)
 def main():
     parser = build_parser()
     args = parser.parse_args()

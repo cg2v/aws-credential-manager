@@ -13,12 +13,13 @@ def main():
     fetchgroup = parser.add_mutually_exclusive_group(required=True)
     fetchgroup.add_argument('--arn', help='ARN of the identity to fetch credentials for')
     fetchgroup.add_argument('--access-key', help='Access key to fetch credentials for')
-    accountgroup = fetchgroup.add_argument_group()
-    accountgroup.add_argument('--account', help='Account number to fetch credentials for',
-                              required=True)
-    accountgroup.add_argument('--role', help='Role name to fetch credentials for', required=True)
+    fetchgroup.add_argument('--account', help='Account number to fetch credentials for')
+    parser.add_argument('--role', help='Role name to fetch credentials for')
     parser.add_argument('--debug', help='Enable debug logging', action='store_true')
     args = parser.parse_args()
+
+    if args.account is not None and args.role is None:
+       parser.error("--role is required with --account")
 
     iolayer = get_resolver(DB_PATH)
     try:
