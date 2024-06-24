@@ -22,7 +22,7 @@ def do_import(filename: str, iolayer: Storage, profile: str):
             textfile, profile_name=profile)
     iolayer.import_credentials(creds)
 
-DB_PATH = os.path.expanduser('~/.aws/multicred.db')
+DB_PATH = 'sqlite:///' + os.path.expanduser('~/.aws/multicred.db')
 def main():
     parser = argparse.ArgumentParser(description='Import AWS credentials')
     parser.add_argument('--profile', help='Profile name to import credentials from',

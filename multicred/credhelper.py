@@ -7,7 +7,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from . import get_resolver
 
-DB_PATH = os.path.expanduser('~/.aws/multicred.db')
+DB_PATH = 'sqlite:///' +  os.path.expanduser('~/.aws/multicred.db')
 def main():
     parser = argparse.ArgumentParser(description='Get AWS credentials from database')
     fetchgroup = parser.add_mutually_exclusive_group(required=True)

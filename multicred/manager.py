@@ -8,7 +8,7 @@ from . import credentials
 from .interfaces import Storage
 from .importer import do_import
 
-DB_PATH = os.path.expanduser('~/.aws/multicred.db')
+DB_PATH = 'sqlite:///' + os.path.expanduser('~/.aws/multicred.db')
 def build_parser():
     parser = argparse.ArgumentParser(description='Manage AWS credentials storage')
     parser.add_argument('--debug', help='Enable debug logging', action='store_true')
