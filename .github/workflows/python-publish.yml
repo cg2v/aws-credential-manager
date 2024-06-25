@@ -27,4 +27,6 @@ jobs:
     - name: Build package
       run: python -m build
     - name: Upload release assets
+      env:
+        GH_TOKEN: ${{ github.token }}
       run: gh release upload ${{github.event.release.tag_name}} dist/* LICENSE README.md
