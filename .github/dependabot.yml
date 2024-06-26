@@ -4,3 +4,15 @@ updates:
     directory: "/" # Location of package manifests
     schedule:
       interval: "weekly"
+    groups:
+      boto:
+        applies-to: version-updates
+        patterns:
+        - "boto*"
+        update-types:
+        - "minor"
+    ignore:
+      - dependency-name: "boto*"
+        update-types: ["version-update:semver-patch"]
+      - dependency-name: "mypy-boto*"
+        update-types: ["version-update:semver-patch"]
