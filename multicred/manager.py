@@ -78,7 +78,7 @@ def do_link(args: argparse.Namespace, iolayer: Storage):
         aws_secret_access_key=response['Credentials']['SecretAccessKey'],
         aws_session_token=response['Credentials']['SessionToken'])
     iolayer.import_credentials(creds)
-    iolayer.construct_identity_relationship(parent_creds, creds, args.role_arn)
+    iolayer.construct_identity_relationship(creds, parent_creds, args.role_arn)
 def main():
     parser = build_parser()
     args = parser.parse_args()
