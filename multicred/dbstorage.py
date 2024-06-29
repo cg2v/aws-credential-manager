@@ -1,11 +1,12 @@
 from typing import Type
+from collections.abc import Iterator
 from sqlalchemy import create_engine, Engine
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.exc import NoResultFound, IntegrityError
 
 from . import dbschema
 from . import credentials
-from .interfaces import IdentityHandle
+from .interfaces import IdentityHandle, Statistics, CredentialInfo
 
 class DBStorageIdentityHandle:
     data: dbschema.AwsIdentityStorage
@@ -211,3 +212,9 @@ class DBStorage:
                 session.commit()
             except NoResultFound:
                 pass
+    def get_statistics(self) -> Statistics:
+        ...
+    def list_identities(self) -> Iterator[IdentityHandle]:
+        ...
+    def list_identity_credentials(self, identity: IdentityHandle) -> Iterator[CredentialInfo]:
+        ...
