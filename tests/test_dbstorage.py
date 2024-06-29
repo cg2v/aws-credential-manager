@@ -135,3 +135,37 @@ def test_purge_credentials(multiple_creds_storage):
     assert cred_check is None
     cred_check_id = multiple_creds_storage.test_object.get_identity_credentials(test_identity)
     assert cred_check_id is None
+    stats = multiple_creds_storage.test_object.get_statistics()
+    assert stats.total_identities == 2
+    assert stats.total_credentials == 1
+    assert stats.total_roles == 1
+
+def test_statistics_empty(empty_storage):
+    stats = empty_storage.get_statistics()
+    assert stats.total_identities == 0
+    assert stats.total_credentials == 0
+    assert stats.total_roles == 0
+
+def test_statistics_role(role_creds_storage):
+    stats = role_creds_storage.test_object.get_statistics()
+    assert stats.total_identities == 1
+    assert stats.total_credentials == 1
+    assert stats.total_roles == 1
+
+def test_statistics_user(user_creds_storage):
+    stats = user_creds_storage.test_object.get_statistics()
+    assert stats.total_identities == 1
+    assert stats.total_credentials == 1
+    assert stats.total_roles == 0
+
+def test_statistics_multiple(multiple_creds_storage):
+    stats = multiple_creds_storage.test_object.get_statistics()
+    assert stats.total_identities == 2
+    assert stats.total_credentials == 3
+    assert stats.total_roles == 1
+
+def test_statistics_derived(derived_creds_storage):
+    stats = derived_creds_storage.test_object.get_statistics()
+    assert stats.total_identities == 2
+    assert stats.total_credentials == 2
+    assert stats.total_roles == 1
