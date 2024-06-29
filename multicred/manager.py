@@ -77,6 +77,18 @@ def do_link(args: argparse.Namespace, iolayer: Storage):
         aws_secret_access_key=response['Credentials']['SecretAccessKey'],
         aws_session_token=response['Credentials']['SessionToken'])
     iolayer.import_credentials(creds)
+    target_identity = iolayer.get_identity_by_arn(creds.aws_identity.aws_identity)
+    if target_identity is None:
+        print('Identity in target creds not found', file=sys.stderr)
+        sys.exit(1)
+    existing_relationship = iolayer.get_parent_identity(target_identity)
+    if existing_relationship[0] is not None:
+        if existing_relationship[0].arn == parent_identity.arn:
+            print('Identity already linked', file=sys.stderr)
+        else:
+            print('Identity already linked to a different parent', file=sys.stderr)
+        sys.exit(1)
+
     iolayer.construct_identity_relationship(creds, parent_creds, args.role_arn)
 def main():
     parser = build_parser()
