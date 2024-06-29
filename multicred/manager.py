@@ -12,7 +12,7 @@ DB_PATH = 'sqlite:///' + os.path.expanduser('~/.aws/multicred.db')
 def build_parser():
     parser = argparse.ArgumentParser(description='Manage AWS credentials storage')
     parser.add_argument('--debug', help='Enable debug logging', action='store_true')
-    subparsers = parser.add_subparsers(dest='subcommand')
+    subparsers = parser.add_subparsers(dest='subcommand', required=True)
     import_parser = subparsers.add_parser('import', help='Import AWS credentials')
     import_parser.add_argument('--profile', help='Profile name to import credentials from',
                                default='default')
@@ -28,15 +28,14 @@ def build_parser():
                              required=True)
     unlink_parser = subparsers.add_parser('unlink', help='Unlink an AWS identity')
     unlink_parser.add_argument('--arn', help='ARN of the identity to unlink')
-    delete_parser = subparsers.add_parser('delete', help='Delete a set of AWS credentials')
-    delete_target = delete_parser.add_mutually_exclusive_group(required=True)
-    delete_target.add_argument('--access-key', help='Access key to delete')
-    delete_account_group = delete_target.add_argument_group()
-    delete_account_group.add_argument('--account', help='Account number of the identity to delete',
-                                      required=True)
-    delete_account_group.add_argument('--role-name', help='Role name to delete',
-                               required=True)
-    #delete_parser.add_argument('--all', help='Delete all credentials', action='store_true')
+    delete_cred_parser = subparsers.add_parser('delete', help='Delete a set of AWS credentials')
+    delete_cred_parser.add_argument('--access-key', help='Access key to delete', required=True)
+    purge_account_parser = subparsers.add_parser('purge', help='Delete all credentials for an identity')
+    purge_account_parser.add_argument('--account', help='Account number of the identity to delete',
+                                        required=True)
+    purge_account_parser.add_argument('--role-name', help='Role name to delete',
+                                        required=True)
+    #subparsers.add_parser('purge-all', help='Delete AWS credentials')
     return parser
 
 def do_unlink(args: argparse.Namespace, iolayer: Storage):
@@ -92,7 +91,7 @@ def main():
         do_link(args, iolayer)
     elif args.subcommand == 'unlink':
         do_unlink(args, iolayer)
-    elif args.subcommand == 'delete':
+    elif args.subcommand == 'delete' or args.subcommand == 'purge':
         do_delete(args, iolayer)
     else:
         raise ValueError('Unknown subcommand')
