@@ -213,7 +213,18 @@ class DBStorage:
             except NoResultFound:
                 pass
     def get_statistics(self) -> Statistics:
-        ...
+        with self.session() as session:
+            identity_count=session.query(dbschema.AwsIdentityStorage).count()
+            credential_count=session.query(dbschema.AwsCredentialStorage).count()
+            account_count=session.query(dbschema.AwsAccountStorage).count()
+            role_count=session.query(dbschema.AwsIdentityStorage).filter_by(
+                cred_type='role').count()
+            return Statistics(
+                total_identities=identity_count,
+                total_credentials=credential_count,
+                total_accounts=account_count,
+                total_roles=role_count,
+                max_credentials_per_identity=-1)
     def list_identities(self) -> Iterator[IdentityHandle]:
         ...
     def list_identity_credentials(self, identity: IdentityHandle) -> Iterator[CredentialInfo]:
