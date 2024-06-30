@@ -23,6 +23,12 @@ class DBStorageIdentityHandle:
     @property
     def name(self) -> str:
         return self.data.name
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, IdentityHandle):
+            return False
+        return self.arn == other.arn
+    def __hash__(self) -> int:
+        return hash(self.arn)
 
 class DBStorage:
     engine: Engine

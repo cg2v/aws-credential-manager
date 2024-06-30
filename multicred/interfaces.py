@@ -1,6 +1,7 @@
-from typing import Protocol, Tuple
+from typing import Protocol, Tuple, runtime_checkable
 from . import credentials
 
+@runtime_checkable
 class IdentityHandle(Protocol):
     @property
     def account_id(self) -> int:
@@ -13,6 +14,10 @@ class IdentityHandle(Protocol):
         ...
     @property
     def name(self) -> str:
+        ...
+    def __eq__(self, other: object) -> bool:
+        ...
+    def __hash__(self) -> int:
         ...
 
 class Resolver(Protocol):
