@@ -226,6 +226,20 @@ class DBStorage:
                 total_roles=role_count,
                 max_credentials_per_identity=-1)
     def list_identities(self) -> Iterator[IdentityHandle]:
-        ...
+        for row in self.session().query(dbschema.AwsIdentityStorage).order_by(
+                dbschema.AwsIdentityStorage.cred_type.asc(),
+                dbschema.AwsIdentityStorage.name.asc()
+            ).all():
+            yield DBStorageIdentityHandle(row)
     def list_identity_credentials(self, identity: IdentityHandle) -> Iterator[CredentialInfo]:
-        ...
+        if not isinstance(identity, DBStorageIdentityHandle):
+            raise ValueError('Identity is not from this storage')
+        db_id = identity.data
+        with self.session() as session:
+            for row in session.query(
+            dbschema.AwsCredentialStorage).filter_by(
+                aws_identity=db_id).order_by(
+                    dbschema.AwsCredentialStorage.created_at.desc()):
+                yield CredentialInfo(
+                    access_key=row.aws_access_key_id,
+                    created_at=row.created_at)
