@@ -63,25 +63,20 @@ class DBStorage:
         assert isinstance(account, dbschema.AwsAccountStorage)
         if identity.cred_type == credentials.CredentialType.ROLE:
             assert isinstance(identity, credentials.AwsRoleIdentity)
-            stored_id, _ = self.get_one_or_create(
-                session, dbschema.AwsIdentityStorage, aws_account=account,
-                cred_type=str(identity.cred_type), name=identity.aws_role_name,
-                create_method_kwargs={'arn': identity.aws_identity, 'userid': identity.aws_userid})
+            name = identity.aws_role_name
         elif identity.cred_type == credentials.CredentialType.USER:
             assert isinstance(identity, credentials.AwsUserIdentity)
-            stored_id, _ = self.get_one_or_create(
-                session, dbschema.AwsIdentityStorage, aws_account=account,
-                cred_type=str(identity.cred_type), name=identity.aws_user_name,
-                create_method_kwargs={'arn': identity.aws_identity, 'userid': identity.aws_userid})
+            name = identity.aws_user_name
         elif identity.cred_type == credentials.CredentialType.UNKNOWN:
             if not force:
                 raise ValueError('Credential is invalid and not indexable')
-            stored_id, _ = self.get_one_or_create(
-                session, dbschema.AwsIdentityStorage, aws_account=account,
-                cred_type=str(identity.cred_type), name=identity.aws_account_id,
-                create_method_kwargs={'arn': identity.aws_identity, 'userid': identity.aws_userid})
+            name = identity.aws_account_id
         else:
             raise ValueError('Unknown cred_type')
+        stored_id, _ = self.get_one_or_create(
+            session, dbschema.AwsIdentityStorage, aws_account=account,
+            cred_type=identity.cred_type.value, name=name,
+            create_method_kwargs={'arn': identity.aws_identity, 'userid': identity.aws_userid})
         credential = dbschema.AwsCredentialStorage(
             aws_identity=stored_id, aws_access_key_id=creds.aws_access_key_id,
             aws_secret_access_key=creds.aws_secret_access_key,
