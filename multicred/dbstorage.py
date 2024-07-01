@@ -1,11 +1,12 @@
 from typing import Type
+from collections.abc import Iterator
 from sqlalchemy import create_engine, Engine
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.exc import NoResultFound, IntegrityError
 
 from . import dbschema
 from . import credentials
-from .interfaces import IdentityHandle
+from .interfaces import IdentityHandle, Statistics, CredentialInfo
 
 class DBStorageIdentityHandle:
     data: dbschema.AwsIdentityStorage
@@ -223,3 +224,34 @@ class DBStorage:
                 session.commit()
             except NoResultFound:
                 pass
+    def get_statistics(self) -> Statistics:
+        with self.session() as session:
+            identity_count=session.query(dbschema.AwsIdentityStorage).count()
+            credential_count=session.query(dbschema.AwsCredentialStorage).count()
+            account_count=session.query(dbschema.AwsAccountStorage).count()
+            role_count=session.query(dbschema.AwsIdentityStorage).filter_by(
+                cred_type='role').count()
+            return Statistics(
+                total_identities=identity_count,
+                total_credentials=credential_count,
+                total_accounts=account_count,
+                total_roles=role_count,
+                max_credentials_per_identity=-1)
+    def list_identities(self) -> Iterator[IdentityHandle]:
+        for row in self.session().query(dbschema.AwsIdentityStorage).order_by(
+                dbschema.AwsIdentityStorage.cred_type.asc(),
+                dbschema.AwsIdentityStorage.name.asc()
+            ).all():
+            yield DBStorageIdentityHandle(row)
+    def list_identity_credentials(self, identity: IdentityHandle) -> Iterator[CredentialInfo]:
+        if not isinstance(identity, DBStorageIdentityHandle):
+            raise ValueError('Identity is not from this storage')
+        db_id = identity.data
+        with self.session() as session:
+            for row in session.query(
+            dbschema.AwsCredentialStorage).filter_by(
+                aws_identity=db_id).order_by(
+                    dbschema.AwsCredentialStorage.created_at.desc()):
+                yield CredentialInfo(
+                    access_key=row.aws_access_key_id,
+                    created_at=row.created_at)
