@@ -4,10 +4,12 @@ from sqlalchemy.exc import NoResultFound
 from multicred.dbschema import AwsAccountStorage, AwsIdentityStorage, AwsCredentialStorage
 from multicred.credentials import AwsRoleIdentity
 
-def test_empty_storage(empty_storage):
-    with empty_storage.session() as session:
-        with raises(NoResultFound):
-            session.query(AwsAccountStorage).one()
+def test_empty_storage(empty_dbstorage, empty_storage):
+    if empty_storage == empty_dbstorage:
+        assert False
+        with empty_dbstorage.session() as session:
+            with raises(NoResultFound):
+                session.query(AwsAccountStorage).one()
     assert empty_storage.get_credentials_by_key('UNKNOWN') is None
 
 
