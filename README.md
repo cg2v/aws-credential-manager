@@ -8,18 +8,36 @@ My employer uses SAML, but not AWS IAM Identity center. Instead, anyone who need
 
 I'd like to have a credential manager that will give me creds for a specific account and role if they are available, and fail if they are not.
 
+## Description
+An interface for storing and fetching AWS credentials, keyed either by access key, arn, or account & role_name.
+Its also possible to automatically acquire credentials with sts:AssumeRole if the parent user/role credentials are valid. Only a single chain of roles is searched.
+
+## Modules
+- multicred/credentials
+API for manipulating credentials. Most external interface objects are defined here. Allows constructing new credential objects and initializing boto with credentials
+- multicred/interfaces
+Abstract APIs for storage and credential resolution modules
+- multicred/dbschema
+SQLAlchemy table objects used by dbstorage
+- multicred/dbstorage
+Implementation of the storage interface using SQLalchemy (and typically sqlite)
+- multicred/resolver
+Implementation of the credential resolutin interface
+## Executable scripts
+- `multicred-import`
+The importer will inspect a file containing credentials (access key id, secret key, and session token), determine the credentials identity with STS, and import the credentials into the database if not already present.
+- `multicred-credhelper`  
+The credential helper will use command line switches or environment variables to select a target identity, search for that identity, and emit the credentials if they are available.
+- `multicred-manage`  
+A utility script for examining and manipulating the storage
+
 ## Plan
 
 The credentials will be stored in an sqlite database, indexed by account id and role name. The import time will also be stored so the scripts can guess if the credentials are still valid.
 
-In addition to library modules, there will be at least 2 scripts.
+## Other branches
 
-- An importer  
-The importer will inspect a file containing credentials (access key id, secret key, and session token), determine the credentials identity with STS, and import the credentials into the database if not already present.
-- A credential helper  
-The credential helper will use command line switches or environment variables to select a target identity, search for that identity, and emit the credentials if they are available.  
-The credential helper may also have a query mode for debugging.
-
+There will be code in an _experiments_ branch that's not really practical. It's for learning pytest features and messing with datastructures.
 
 ## Future enhancements
 The database (or perhaps only the secret key and session token) should be encrypted if the platform allows it.
