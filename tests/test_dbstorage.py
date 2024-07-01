@@ -1,23 +1,30 @@
-from pytest import raises
+from pytest import raises, skip
 
 from sqlalchemy.exc import NoResultFound
+from multicred.dbstorage import DBStorage
 from multicred.dbschema import AwsAccountStorage, AwsIdentityStorage, AwsCredentialStorage
 from multicred.credentials import AwsRoleIdentity
 
-def test_empty_storage(empty_storage):
+def test_empty_dbstorage(empty_storage):
+    if not isinstance(empty_storage, DBStorage):
+        skip('Test only valid for DBStorage')  # pragma: no cover
     with empty_storage.session() as session:
         with raises(NoResultFound):
             session.query(AwsAccountStorage).one()
+
+def test_empty_storage(empty_storage):
     assert empty_storage.get_credentials_by_key('UNKNOWN') is None
 
 
-def test_role_storage_find_key(role_creds_storage):
+def test_role_dbstorage_find_key(role_creds_storage):
+    if not isinstance(role_creds_storage.test_object, DBStorage):
+        skip('Test only valid for DBStorage')  # pragma: no cover
     with role_creds_storage.test_object.session() as session:
         stored_id = session.query(AwsIdentityStorage).filter_by(
             arn='arn:aws:sts::123456789012:assumed-role/test_role/test_session').one()
         credential = session.query(AwsCredentialStorage).filter_by(
             aws_identity=stored_id).order_by(
-                AwsCredentialStorage.created_at.desc()).first()
+                AwsCredentialStorage.created_at.desc()).one()
         assert credential.aws_access_key_id == \
             role_creds_storage.credentials.test_object.aws_access_key_id
 
