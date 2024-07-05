@@ -7,6 +7,8 @@ from enum import Enum
 import botocore.exceptions
 from boto3 import session
 
+from .interfaces import IdentityHandle
+
 if TYPE_CHECKING:
     from mypy_boto3_sts.type_defs import GetCallerIdentityResponseTypeDef
 
@@ -35,7 +37,7 @@ class CredentialType(Enum):
     ASSUMED_ROLE = 'role'
     UNKNOWN = 'unknown'
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class AwsIdentity:
     aws_identity: str = field(repr=False)
     aws_userid : str
@@ -60,6 +62,32 @@ class AwsIdentity:
         object.__setattr__(self, 'cred_path',
                            '/'.join(self._resource_components[1:]))
 
+    @property
+    def arn(self) -> str:
+        return self.aws_identity
+
+    @property
+    def account_id(self) -> int:
+        return int(self.aws_account_id)
+
+    @property
+    def name(self) -> str:
+        if len(self._resource_components) == 2:
+            return self._resource_components[1]
+        raise WrongIdentityTypeError('This identity does not have a simple name')
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, AwsIdentity):
+            return self.aws_identity == other.aws_identity and \
+                self.aws_userid == other.aws_userid
+        if isinstance(other, str):
+            return self.aws_identity == other
+        if isinstance(other, IdentityHandle):
+            return self.aws_identity == other.arn
+        return False
+
+    def __hash__(self) -> int:
+        return hash(self.aws_identity)
 
 @dataclass(frozen=True)
 class AwsRoleIdentity(AwsIdentity):
