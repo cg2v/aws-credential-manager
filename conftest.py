@@ -5,7 +5,7 @@ from pytest import fixture
 import boto3
 from moto import mock_aws
 
-from multicred.credentials  import Credentials, AwsRoleIdentity, AwsUserIdentity
+from multicred.credentials  import CredentialType, Credentials, AwsRoleIdentity, AwsUserIdentity
 from multicred.dbstorage import DBStorage
 from multicred.resolver import StorageBasedResolver
 from multicred.interfaces import Storage, Resolver
@@ -23,6 +23,23 @@ def user_identity():
     return AwsUserIdentity(
         aws_identity='arn:aws:iam::123456789012:user/test_user',
         aws_userid='AIDEXAMPLE')
+
+@dataclass(frozen=True)
+class TestIdentityHandle:
+    arn: str = 'arn:aws:sts::123456789012:assumed-role/test_role/test_session'
+    account_id: int = 123456789012
+    cred_type: CredentialType = CredentialType.ROLE
+    name: str = 'test_role'
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, self.__class__):
+            return other.__eq__(self)
+        return self.arn == other.arn
+    def __hash__(self) -> int:
+        return hash(self.arn)
+
+@fixture
+def test_identity_handle():
+    return TestIdentityHandle()
 
 @dataclass
 class CredentialsWrapper:

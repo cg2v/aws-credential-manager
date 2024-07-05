@@ -2,7 +2,6 @@ from pytest import raises
 
 from sqlalchemy.exc import NoResultFound
 from multicred.dbschema import AwsAccountStorage, AwsIdentityStorage, AwsCredentialStorage
-from multicred.credentials import AwsRoleIdentity
 
 def test_empty_storage(empty_storage):
     with empty_storage.session() as session:
@@ -44,10 +43,9 @@ def test_find_parent_identity(derived_creds_storage):
     target_role_creds = derived_creds_storage.role_creds.test_object
     target_role_identity = target_role_creds.aws_identity
     assert target_role_identity.cred_type.value == 'role'
-    assert isinstance(target_role_identity, AwsRoleIdentity)
 
     target_stored_id = derived_creds_storage.test_object.get_identity_by_account_and_role_name(
-        target_role_identity.aws_account_id, target_role_identity.aws_role_name)
+        target_role_identity.aws_account_id, target_role_identity.name)
     assert target_stored_id is not None
     stored_id, role_arn = derived_creds_storage.test_object.get_parent_identity(
         target_stored_id)
@@ -59,10 +57,9 @@ def test_find_parent_identity_none(role_creds_storage):
     target_role_creds = role_creds_storage.credentials.test_object
     target_role_identity = target_role_creds.aws_identity
     assert target_role_identity.cred_type.value == 'role'
-    assert isinstance(target_role_identity, AwsRoleIdentity)
 
     target_stored_id = role_creds_storage.test_object.get_identity_by_account_and_role_name(
-        target_role_identity.aws_account_id, target_role_identity.aws_role_name)
+        target_role_identity.aws_account_id, target_role_identity.name)
     assert target_stored_id is not None
     stored_id, role_arn = role_creds_storage.test_object.get_parent_identity(
         target_stored_id)
@@ -73,10 +70,9 @@ def test_remove_parent_identity(derived_creds_storage):
     target_role_creds = derived_creds_storage.role_creds.test_object
     target_role_identity = target_role_creds.aws_identity
     assert target_role_identity.cred_type.value == 'role'
-    assert isinstance(target_role_identity, AwsRoleIdentity)
 
     target_stored_id = derived_creds_storage.test_object.get_identity_by_account_and_role_name(
-        target_role_identity.aws_account_id, target_role_identity.aws_role_name)
+        target_role_identity.aws_account_id, target_role_identity.name)
     assert target_stored_id is not None
     stored_id, role_arn = derived_creds_storage.test_object.get_parent_identity(
         target_stored_id)
