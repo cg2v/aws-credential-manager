@@ -3,11 +3,10 @@ from typing import TYPE_CHECKING
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from configparser import ConfigParser
-from enum import Enum
 import botocore.exceptions
 from boto3 import session
 
-from .interfaces import IdentityHandle
+from .base_objects import IdentityHandle, CredentialType
 
 if TYPE_CHECKING:
     from mypy_boto3_sts.type_defs import GetCallerIdentityResponseTypeDef
@@ -30,12 +29,6 @@ class WrongIdentityTypeError(MultiCredError, TypeError):
 class BadIdentityError(MultiCredError, ValueError):
     pass
 
-class CredentialType(Enum):
-    """Enum to represent the type of AWS credentials."""
-    USER = 'user'
-    ROLE = 'role'
-    ASSUMED_ROLE = 'role'
-    UNKNOWN = 'unknown'
 
 @dataclass(frozen=True, eq=False)
 class AwsIdentity:

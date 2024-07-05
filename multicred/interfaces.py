@@ -1,24 +1,6 @@
-from typing import Protocol, Tuple, runtime_checkable
+from typing import Protocol, Tuple
+from .base_objects import IdentityHandle
 from . import credentials
-
-@runtime_checkable
-class IdentityHandle(Protocol):
-    @property
-    def account_id(self) -> int:
-        ...
-    @property
-    def arn(self) -> str:
-        ...
-    @property
-    def cred_type(self) -> credentials.CredentialType:
-        ...
-    @property
-    def name(self) -> str:
-        ...
-    def __eq__(self, other: object) -> bool:
-        ...
-    def __hash__(self) -> int:
-        ...
 
 class Resolver(Protocol):
     def get_credentials_by_arn(self, arn: str) -> credentials.Credentials | None:
