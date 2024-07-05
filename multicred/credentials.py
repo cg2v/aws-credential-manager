@@ -65,7 +65,9 @@ class AwsIdentity:
 
     @property
     def name(self) -> str:
-        if len(self._resource_components) == 2:
+        if len(self._resource_components) == 2 or (
+                len(self._resource_components) == 3 and self.cred_type == CredentialType.ROLE
+        ):
             return self._resource_components[1]
         raise WrongIdentityTypeError('This identity does not have a simple name')
 
@@ -82,7 +84,7 @@ class AwsIdentity:
     def __hash__(self) -> int:
         return hash(self.aws_identity)
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class AwsRoleIdentity(AwsIdentity):
     """Class to represent the identity of the AWS role assumed by the credentials."""
     aws_role_name: str = field(init=False, compare=False)
@@ -105,6 +107,15 @@ class AwsRoleIdentity(AwsIdentity):
 
         return cls(aws_identity=aws_identity, aws_userid=aws_role_id, aws_role_session_name=aws_role_session_name)
 
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, AwsRoleIdentity):
+            return self.aws_identity == other.aws_identity and \
+                self.aws_userid == other.aws_userid and \
+                self.aws_role_session_name == other.aws_role_session_name
+        return super().__eq__(other)
+
+    def __hash__(self) -> int:
+        return super().__hash__()
 
 @dataclass(frozen=True)
 class AwsUserIdentity(AwsIdentity):
