@@ -184,8 +184,6 @@ class FileStorage:
         parent_role_path.write_text(role_arn, encoding="ASCII")
 
     def remove_identity_relationship(self, identity: IdentityHandle) -> None:
-        if identity.cred_type != credentials.CredentialType.ROLE:
-            raise ValueError("Can only remove relationships for roles")
         id_path = self._get_path_from_identity(identity)
         if not id_path.exists():
             return
