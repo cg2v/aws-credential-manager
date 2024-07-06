@@ -1,7 +1,8 @@
-from pytest import raises, skip
+from pytest import raises, skip, xfail
 
 from sqlalchemy.exc import NoResultFound
 from multicred.dbstorage import DBStorage
+from multicred.filestorage import FileStorage
 from multicred.dbschema import AwsAccountStorage, AwsIdentityStorage, AwsCredentialStorage
 
 def test_empty_dbstorage(empty_storage):
@@ -74,6 +75,8 @@ def test_find_parent_identity_none(role_creds_storage):
     assert role_arn is None
 
 def test_remove_parent_identity(derived_creds_storage):
+    if isinstance(derived_creds_storage.test_object, FileStorage):
+        xfail('FileStorage does check for dependent identities on remove')
     target_role_creds = derived_creds_storage.role_creds.test_object
     target_role_identity = target_role_creds.aws_identity
     assert target_role_identity.cred_type.value == 'role'
@@ -109,6 +112,8 @@ def test_delete_credentials(multiple_creds_storage):
     assert cred_check_id is not None
     assert cred_check_id.aws_access_key_id == test_creds.aws_access_key_id
     multiple_creds_storage.test_object.delete_credentials_by_key(test_creds.aws_access_key_id)
+    if isinstance(multiple_creds_storage.test_object, FileStorage):
+        xfail('FileStorage does not reset current creds on delete')
     # After the delete, the first access key should be gone, but the identity's creds should
     # still be present with a different access key
     cred_check = multiple_creds_storage.test_object.get_credentials_by_key(

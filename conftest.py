@@ -8,6 +8,7 @@ from moto import mock_aws
 from multicred.credentials  import CredentialType, Credentials, AwsRoleIdentity, AwsUserIdentity
 from multicred.dbstorage import DBStorage
 from multicred.memstorage import MemStorage
+from multicred.filestorage import FileStorage
 from multicred.resolver import StorageBasedResolver
 from multicred.interfaces import Storage, Resolver
 
@@ -104,16 +105,19 @@ def unknown_credentials():
         aws_secret_access_key='UNKNOWN',
     )
 
-def get_memstorage():
+def get_memstorage(tmp_path):
     return MemStorage()
 
-def get_dbstorage():
-    return DBStorage('sqlite:///:memory:')
+def get_dbstorage(tmp_path):
+    return DBStorage(f'sqlite:///{tmp_path}/multicred.db')
 
-@fixture(params=[get_dbstorage, get_memstorage])
-def storage(request) -> Storage:
-    rv = request.param()
-    assert isinstance(rv, (DBStorage, MemStorage))
+def get_filestorage(tmp_path):
+    return FileStorage(tmp_path)
+
+@fixture(params=[get_dbstorage, get_memstorage, get_filestorage])
+def storage(request, tmp_path) -> Storage:
+    rv = request.param(tmp_path)
+    assert isinstance(rv, (DBStorage, MemStorage, FileStorage))
     return rv
 
 @fixture
