@@ -35,6 +35,13 @@ def build_parser():
                                         required=True)
     purge_account_parser.add_argument('--role-name', help='Role name to delete',
                                         required=True)
+    subparsers.add_parser('stats', help='Display statistics')
+    subparsers.add_parser('list-ids', help='List all identities')
+    list_creds_parser = subparsers.add_parser('list-creds', help='List credentials for an identity')
+    list_creds_parser.add_argument('--account', help='Account number of the identity to list',
+                                      required=True)
+    list_creds_parser.add_argument('--role-name', help='Role name to list',
+                                    required=True)
     #subparsers.add_parser('purge-all', help='Delete AWS credentials')
     return parser
 
@@ -90,6 +97,31 @@ def do_link(args: argparse.Namespace, iolayer: Storage):
         sys.exit(1)
 
     iolayer.construct_identity_relationship(creds, parent_creds, args.role_arn)
+
+def do_stats(iolayer: Storage):
+    stats = iolayer.get_statistics()
+    print(f'Total identities: {stats.total_identities}')
+    print(f'Total credentials: {stats.total_credentials}')
+    print(f'Total roles: {stats.total_roles}')
+    print(f'Total accounts: {stats.total_accounts}')
+    print(f'Max credentials per identity: {stats.max_credentials_per_identity}')
+
+def do_list_ids(iolayer: Storage):
+    for identity in iolayer.list_identities():
+        print(f'ARN: {identity.arn}')
+        print(f'Account: {identity.account_id}')
+        print(f'Short Identifier: {identity.name}')
+        print()
+
+def do_list_creds(args: argparse.Namespace, iolayer: Storage):
+    identity = iolayer.get_identity_by_account_and_role_name(args.account, args.role_name)
+    if identity is None:
+        print('No match for identity', file=sys.stderr)
+        sys.exit(1)
+    for cred in iolayer.list_identity_credentials(identity):
+        print(f'Access Key: {cred.access_key}')
+        print(f'Created At: {cred.created_at}')
+        print()
 def main():
     parser = build_parser()
     args = parser.parse_args()
@@ -105,6 +137,12 @@ def main():
         do_unlink(args, iolayer)
     elif args.subcommand == 'delete' or args.subcommand == 'purge':
         do_delete(args, iolayer)
+    elif args.subcommand == 'stats':
+        do_stats(iolayer)
+    elif args.subcommand == 'list-ids':
+        do_list_ids(iolayer)
+    elif args.subcommand == 'list-creds':
+        do_list_creds(args, iolayer)
     else:
         raise ValueError('Unknown subcommand')
 
