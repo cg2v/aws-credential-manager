@@ -75,8 +75,6 @@ def test_find_parent_identity_none(role_creds_storage):
     assert role_arn is None
 
 def test_remove_parent_identity(derived_creds_storage):
-    if isinstance(derived_creds_storage.test_object, FileStorage):
-        xfail('FileStorage does check for dependent identities on remove')
     target_role_creds = derived_creds_storage.role_creds.test_object
     target_role_identity = target_role_creds.aws_identity
     assert target_role_identity.cred_type.value == 'role'
