@@ -1,9 +1,12 @@
 from typing import Tuple
+from collections.abc import Iterator
 from dataclasses import dataclass, field
+from datetime import datetime
 import warnings
 
 from . import credentials
 from .base_objects import IdentityKey, IdentityHandle, MultiCredLinkError, MultiCredBadRequest
+from .interfaces import Statistics, CredentialInfo
 from .utils import parse_principal
 
 
@@ -11,6 +14,7 @@ from .utils import parse_principal
 class MemStorageIdentityData:
     identity: credentials.AwsIdentity
     my_creds: list[credentials.Credentials] = field(default_factory=list, repr=False, compare=False)
+    cred_time: dict[str, datetime] = field(default_factory=dict, repr=False, compare=False)
     parent_identity: IdentityHandle | None = field(default=None, repr=False, compare=False)
     role_arn: str | None = field(default=None, repr=False, compare=False)
 @dataclass
@@ -92,6 +96,7 @@ class MemStorage:
             self.identities[key] = new_identity
         target_id = self.identities[key]
         target_id.my_creds.append(creds)
+        target_id.cred_time[creds.aws_access_key_id] = datetime.now()
     def get_identity_credentials(self, identity: IdentityHandle) \
         -> credentials.Credentials | None:
         data = self._get_identity(identity)
@@ -114,3 +119,32 @@ class MemStorage:
                 if creds.aws_access_key_id == access_key:
                     return creds
         return None
+    def get_statistics(self) -> Statistics:
+        total_identities = len(self.identities)
+        if total_identities == 0:
+            return Statistics(0, 0, 0, 0, 0)
+        total_credentials = sum(len(i.my_creds) for i in self.identities.values())
+        total_roles = sum(1 for i in self.identities.values() if isinstance(i.identity, credentials.AwsRoleIdentity))
+        total_accounts = len(self.accounts)
+        max_credentials_per_identity = max(len(i.my_creds) for i in self.identities.values())
+        return Statistics(
+            total_identities=total_identities,
+            total_credentials=total_credentials,
+            total_roles=total_roles,
+            total_accounts=total_accounts,
+            max_credentials_per_identity=max_credentials_per_identity
+        )
+    def list_identities(self) -> Iterator[IdentityHandle]:
+        def get_key(identity: MemStorageIdentityData) -> tuple[str, str]:
+            return identity.identity.cred_type.value, identity.identity.name
+        for identity in sorted(self.identities.values(), key=get_key):
+            yield identity.identity
+    def list_identity_credentials(self, identity: IdentityHandle) -> Iterator[CredentialInfo]:
+        data = self._get_identity(identity)
+        if data is None:
+            return
+        for creds in data.my_creds:
+            yield CredentialInfo(
+                access_key=creds.aws_access_key_id,
+                created_at=data.cred_time[creds.aws_access_key_id]
+            )
