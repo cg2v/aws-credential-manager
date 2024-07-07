@@ -1,41 +1,8 @@
 from pathlib import Path
-import warnings
 from configparser import ConfigParser
-from dataclasses import dataclass
 
 from . import credentials
 from .interfaces import IdentityHandle
-
-@dataclass(frozen=True, eq=False)
-class FileStorageIdentityHandle:
-    _arn: str
-    _account_id: int
-    _cred_type: credentials.CredentialType
-    _name: str
-
-    @property
-    def account_id(self) -> int:
-        return self._account_id
-
-    @property
-    def arn(self) -> str:
-        return self._arn
-
-    @property
-    def cred_type(self) -> credentials.CredentialType:
-        return self._cred_type
-
-    @property
-    def name(self) -> str:
-        return self._name
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, IdentityHandle):
-            return False
-        return self.arn == other.arn
-
-    def __hash__(self) -> int:
-        return hash(self.arn)
 
 class FileStorage:
     _root: Path
@@ -52,29 +19,25 @@ class FileStorage:
         if not marker.exists():
             raise ValueError(f"Folder {root} does not belong to multicred")
 
-    def _get_handle_from_ini(self, inifile: Path) -> IdentityHandle:
+    def _get_idini_path(self, id_path: Path) -> Path:
+        return id_path.joinpath("identity.ini")
+
+    def _get_idini(self, id_path: Path) -> ConfigParser:
+        inifile = self._get_idini_path(id_path)
+        if not inifile.exists():
+            raise ValueError(f"Identity {id_path} does not have an ini file")
         config = ConfigParser()
         config.read(inifile)
-        arn = config.get("identity", "arn")
-        role_session_name = config.get("identity", "role_session_name", fallback=None)
-        userid = config.get("identity", "userid", fallback=None)
-        if role_session_name:
-            return credentials.AwsRoleIdentity(arn, userid or '', role_session_name)
-        return credentials.AwsIdentity(arn, userid or '')
-
+        return config
 
     def _get_handle_from_path(self, path: Path) -> IdentityHandle:
-        newpath = path.resolve().relative_to(self._root)
-        components = newpath.parts
-        account_id = int(components[1])
-        cred_type = credentials.CredentialType(components[2])
-        name = components[3]
-        inifile = path.joinpath("identity.ini")
-        if inifile.exists():
-            return self._get_handle_from_ini(inifile)
-        warnings.warn(f"Identity {path} does not have an ini file")
-        arn = f"arn:aws:sts::{account_id}:{cred_type.value}/{name}"
-        return FileStorageIdentityHandle(arn, account_id, cred_type, name)
+        config = self._get_idini(path)
+        arn = config.get("identity", "arn")
+        role_session_name = config.get("identity", "role_session_name", fallback=None)
+        userid = config.get("identity", "userid")
+        if role_session_name:
+            return credentials.AwsRoleIdentity(arn, userid, role_session_name)
+        return credentials.AwsIdentity(arn, userid)
 
     def _get_path_from_identity(self, identity: IdentityHandle) -> Path:
         return self._root.joinpath("account_identities",
@@ -131,10 +94,8 @@ class FileStorage:
     def get_parent_identity(self, identity: IdentityHandle):
         if identity.cred_type != credentials.CredentialType.ROLE:
             return None, None
-        id_path = self._root.joinpath("account_identities",
-                                     str(identity.account_id),
-                                     "role",
-                                     identity.name)
+        id_path = self._get_path_from_identity(identity)
+
         parent_link = id_path.joinpath("parent_link")
         if not parent_link.exists():
             return None, None
