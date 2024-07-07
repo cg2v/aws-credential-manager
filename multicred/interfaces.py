@@ -1,6 +1,22 @@
 from typing import Protocol, Tuple
+from dataclasses import dataclass
+from collections.abc import Iterator
+from datetime import datetime
 from .base_objects import IdentityHandle
 from . import credentials
+
+@dataclass
+class Statistics:
+    total_identities: int
+    total_credentials: int
+    total_roles: int
+    total_accounts: int
+    max_credentials_per_identity: int
+
+@dataclass
+class CredentialInfo:
+    access_key: str
+    created_at: datetime
 
 class Resolver(Protocol):
     def get_credentials_by_arn(self, arn: str) -> credentials.Credentials | None:
@@ -35,6 +51,12 @@ class Storage(Protocol):
     def delete_credentials_by_key(self, access_key: str) -> None:
         ...
     def purge_identity_credentials(self, identity: IdentityHandle) -> None:
-        ...    
+        ...
     def get_credentials_by_key(self, access_key: str) -> credentials.Credentials | None:
+        ...
+    def get_statistics(self) -> Statistics:
+        ...
+    def list_identities(self) -> Iterator[IdentityHandle]:
+        ...
+    def list_identity_credentials(self, identity: IdentityHandle) -> Iterator[CredentialInfo]:
         ...
