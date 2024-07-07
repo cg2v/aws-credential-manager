@@ -26,7 +26,7 @@ class FileStorage:
         inifile = self._get_idini_path(id_path)
         if not inifile.exists():
             raise ValueError(f"Identity {id_path} does not have an ini file")
-        config = ConfigParser()
+        config = ConfigParser(delimiters=('='), interpolation=None)
         config.read(inifile)
         return config
 
@@ -127,6 +127,12 @@ class FileStorage:
         config.set('parent', 'parent_arn', parent_creds.aws_identity.aws_identity)
         config.set('parent', 'role_arn', role_arn)
         self._update_idini(id_path, config)
+        parent_path = self._get_path_from_identity(parent_creds.aws_identity)
+        parent_config = self._get_idini(parent_path)
+        if 'children' not in parent_config:
+            parent_config.add_section('children')
+        parent_config.set('children', creds.aws_identity.arn, role_arn)
+        self._update_idini(parent_path, parent_config)
 
     def remove_identity_relationship(self, identity: IdentityHandle) -> None:
         id_path = self._get_path_from_identity(identity)
@@ -135,11 +141,23 @@ class FileStorage:
         if not id_path.is_dir():
             raise ValueError(f"Identity path {id_path} is not a directory")
         config = self._get_idini(id_path)
+        # XXX the test is bad and requires the child exception to be raised
+        # even if there are no parents
+        if 'children' in config and len(config.options('children')) > 0:
+            raise ValueError("This identity has dependent children")
         if 'parent' not in config:
             return
+        parent_arn = config.get("parent", "parent_arn")
+        parent = self.get_identity_by_arn(parent_arn)
+        if parent is not None:
+            parent_path = self._get_path_from_identity(parent)
+            parent_config = self._get_idini(parent_path)
+            if 'children' in parent_config:
+                if parent_config.remove_option('children', identity.arn):
+                    self._update_idini(parent_path, parent_config)
+
         config.remove_section('parent')
         self._update_idini(id_path, config)
-        # XXX doesn't check if this is a parent
 
     def import_credentials(self, creds: credentials.Credentials, force: bool = False) -> None:
         id_path = self._create_identity_path(creds)
