@@ -30,6 +30,11 @@ class FileStorage:
         config.read(inifile)
         return config
 
+    def _update_idini(self, id_path: Path, config: ConfigParser) -> None:
+        inifile = self._get_idini_path(id_path)
+        with inifile.open("w", encoding="ASCII") as file:
+            config.write(file)
+
     def _get_handle_from_path(self, path: Path) -> IdentityHandle:
         config = self._get_idini(path)
         arn = config.get("identity", "arn")
@@ -95,13 +100,15 @@ class FileStorage:
         if identity.cred_type != credentials.CredentialType.ROLE:
             return None, None
         id_path = self._get_path_from_identity(identity)
-
-        parent_link = id_path.joinpath("parent_link")
-        if not parent_link.exists():
+        config = self._get_idini(id_path)
+        if 'parent' not in config:
             return None, None
-        parent_role_path = id_path.joinpath("parent_role")
-        parent_role = parent_role_path.read_text(encoding="ASCII").strip()
-        return self._get_handle_from_path(parent_link), parent_role
+        parent_arn = config.get("parent", "parent_arn")
+        parent_role = config.get("parent", "role_arn")
+        parent_id = self.get_identity_by_arn(parent_arn)
+        if parent_id is None:
+            return None, None
+        return parent_id, parent_role
 
     def construct_identity_relationship(self, creds: credentials.Credentials,
                                     parent_creds: credentials.Credentials,
@@ -114,22 +121,12 @@ class FileStorage:
             id_path.mkdir(parents=True)
         if not id_path.is_dir():
             raise ValueError(f"Identity path {id_path} is not a directory")
-        parent_link = id_path.joinpath("parent_link")
-        parent_role_path = id_path.joinpath("parent_role")
-        parent_link_target = self._get_path_from_identity(parent_creds.aws_identity)
-        link_target_base = id_path.parent
-        link_target_prefix = Path("..")
-        while True:
-            try:
-                parent_link_target = parent_link_target.relative_to(link_target_base)
-                break
-            except ValueError as e:
-                if link_target_base == self._root:
-                    raise ValueError("Parent identity is not in the same root") from e
-                link_target_base = link_target_base.parent
-                link_target_prefix = link_target_prefix.joinpath("..")
-        parent_link.symlink_to(link_target_prefix.joinpath(parent_link_target))
-        parent_role_path.write_text(role_arn, encoding="ASCII")
+        config = self._get_idini(id_path)
+        if 'parent' not in config:
+            config.add_section('parent')
+        config.set('parent', 'parent_arn', parent_creds.aws_identity.aws_identity)
+        config.set('parent', 'role_arn', role_arn)
+        self._update_idini(id_path, config)
 
     def remove_identity_relationship(self, identity: IdentityHandle) -> None:
         id_path = self._get_path_from_identity(identity)
@@ -137,11 +134,12 @@ class FileStorage:
             return
         if not id_path.is_dir():
             raise ValueError(f"Identity path {id_path} is not a directory")
+        config = self._get_idini(id_path)
+        if 'parent' not in config:
+            return
+        config.remove_section('parent')
+        self._update_idini(id_path, config)
         # XXX doesn't check if this is a parent
-        parent_link = id_path.joinpath("parent_link")
-        parent_role_path = id_path.joinpath("parent_role")
-        parent_link.unlink(missing_ok=True)
-        parent_role_path.unlink(missing_ok=True)
 
     def import_credentials(self, creds: credentials.Credentials, force: bool = False) -> None:
         id_path = self._create_identity_path(creds)
