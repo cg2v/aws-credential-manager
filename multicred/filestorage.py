@@ -82,8 +82,8 @@ class FileStorage:
                                    identity.cred_type.value,
                                    identity.name)
 
-    def _create_identity_path(self, identity: IdentityHandle) -> Path:
-        id_path = self._get_path_from_identity(identity)
+    def _create_identity_path(self, creds: credentials.Credentials) -> Path:
+        id_path = self._get_path_from_identity(creds.aws_identity)
         if not id_path.exists():
             id_path.mkdir(parents=True)
         if not id_path.is_dir():
@@ -92,38 +92,25 @@ class FileStorage:
         if not inifile.exists():
             with inifile.open("w", encoding="ASCII") as file:
                 config = ConfigParser()
-                config.add_section("status")
-                config.set("status", "identity_source", "handle")
                 config.add_section("identity")
-                config.set("identity", "arn", identity.arn)
+                config.set("identity", "arn", creds.aws_identity.aws_identity)
+                config.set("identity", "userid", creds.aws_identity.aws_userid)
+                config.set("identity", "cred_type", creds.aws_identity.cred_type.value)
+                if creds.aws_identity.cred_type == credentials.CredentialType.ROLE:
+                    assert isinstance(creds.aws_identity, credentials.AwsRoleIdentity)
+                    config.set("identity", "role_session_name", 
+                               creds.aws_identity.aws_role_session_name)
                 config.write(file)
         arndir = self._root.joinpath("identity_arns")
         if not arndir.exists():
             arndir.mkdir()
         link_target_path = Path(
             "..", id_path.resolve().relative_to(self._root))
-        arn_link_path = arndir.joinpath(identity.arn.replace(
-            ":", "_").replace("/", "_"))
+        arnlink_name = creds.aws_identity.arn.replace(":", "_").replace("/", "_")
+        arn_link_path = arndir.joinpath(arnlink_name)
         if not arn_link_path.exists():
             arn_link_path.symlink_to(link_target_path)
         return id_path
-    def _update_identity_from_cred(self, creds: credentials.Credentials) -> None:
-        id_path = self._get_path_from_identity(creds.aws_identity)
-        inifile = id_path.joinpath("identity.ini")
-        config = ConfigParser()
-        config.read_string(inifile.read_text(encoding="ASCII"))
-        if config.get("status", "identity_source") == "credential":
-            return
-        with inifile.open("w", encoding="ASCII") as file:
-            config.set("status", "identity_source", "credential")
-            config.set("identity", "arn", creds.aws_identity.aws_identity)
-            config.set("identity", "userid", creds.aws_identity.aws_userid)
-            config.set("identity", "cred_type", creds.aws_identity.cred_type.value)
-            if creds.aws_identity.cred_type == credentials.CredentialType.ROLE:
-                assert isinstance(creds.aws_identity, credentials.AwsRoleIdentity)
-                config.set("identity", "role_session_name", 
-                           creds.aws_identity.aws_role_session_name)
-            config.write(file)
     def get_identity_by_arn(self, arn: str) -> IdentityHandle | None:
         arnpath = self._root.joinpath(
             "identity_arns", arn.replace(":", "_").replace("/", "_"))
@@ -196,8 +183,7 @@ class FileStorage:
         parent_role_path.unlink(missing_ok=True)
 
     def import_credentials(self, creds: credentials.Credentials, force: bool = False) -> None:
-        id_path = self._create_identity_path(creds.aws_identity)
-        self._update_identity_from_cred(creds)
+        id_path = self._create_identity_path(creds)
         cred_path = id_path.joinpath(creds.aws_access_key_id)
         if cred_path.exists() and not force:
             raise ValueError("Credentials already exist")
@@ -251,7 +237,7 @@ class FileStorage:
                 aws_userid=identity.name
             )
         return rv
-    
+
     def get_credentials_by_key(self, access_key: str) -> credentials.Credentials | None:
         allcreds_path = self._root.joinpath("all_credentials")
         if not allcreds_path.exists():
