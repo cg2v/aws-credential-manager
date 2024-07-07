@@ -54,7 +54,7 @@ class AwsIdentityStorage(Base):
 class AwsCredentialStorage(Base):
     __tablename__ = 'aws_credential'
     id : Mapped[int] = mapped_column(primary_key=True)
-    aws_identity_id : Mapped[str] = mapped_column(ForeignKey('aws_identity.id'))
+    aws_identity_id : Mapped[int] = mapped_column(ForeignKey('aws_identity.id'))
     aws_identity = relationship('AwsIdentityStorage', back_populates='credentials')
     aws_access_key_id : Mapped[str] = mapped_column(String(20), nullable=False, unique=True)
     aws_secret_access_key : Mapped[str] = mapped_column(String(40), nullable=False)
