@@ -90,16 +90,16 @@ class FileStorage:
             raise ValueError(f"Identity path {id_path} is not a directory")
         inifile = id_path.joinpath("identity.ini")
         if not inifile.exists():
+            config = ConfigParser()
+            config.add_section("identity")
+            config.set("identity", "arn", creds.aws_identity.aws_identity)
+            config.set("identity", "userid", creds.aws_identity.aws_userid)
+            config.set("identity", "cred_type", creds.aws_identity.cred_type.value)
+            if creds.aws_identity.cred_type == credentials.CredentialType.ROLE:
+                assert isinstance(creds.aws_identity, credentials.AwsRoleIdentity)
+                config.set("identity", "role_session_name",
+                            creds.aws_identity.aws_role_session_name)
             with inifile.open("w", encoding="ASCII") as file:
-                config = ConfigParser()
-                config.add_section("identity")
-                config.set("identity", "arn", creds.aws_identity.aws_identity)
-                config.set("identity", "userid", creds.aws_identity.aws_userid)
-                config.set("identity", "cred_type", creds.aws_identity.cred_type.value)
-                if creds.aws_identity.cred_type == credentials.CredentialType.ROLE:
-                    assert isinstance(creds.aws_identity, credentials.AwsRoleIdentity)
-                    config.set("identity", "role_session_name", 
-                               creds.aws_identity.aws_role_session_name)
                 config.write(file)
         arndir = self._root.joinpath("identity_arns")
         if not arndir.exists():
