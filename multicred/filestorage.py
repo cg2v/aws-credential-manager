@@ -1,8 +1,11 @@
+from typing import Tuple
+from collections.abc import Iterator
 from pathlib import Path
+from datetime import datetime
 from configparser import ConfigParser
 
 from . import credentials
-from .interfaces import IdentityHandle
+from .interfaces import IdentityHandle, Statistics, CredentialInfo
 
 class FileStorage:
     _root: Path
@@ -264,3 +267,50 @@ class FileStorage:
             if allcreds_link.exists():
                 allcreds_link.unlink()
             cred_link.unlink()
+
+    def _count_creds(self, path: Path) -> int:
+        return len([name for name in path.iterdir()
+                    if not name.is_symlink() and
+                    name.name not in ["identity.ini", "current"]])
+    def get_statistics(self) -> Statistics:
+        total_identities = 0
+        total_credentials = 0
+        total_roles = 0
+        total_accounts = 0
+        max_credentials_per_identity = 0
+        account_root = self._root.joinpath("account_identities")
+        if not account_root.exists():
+            return Statistics(0, 0, 0, 0, 0)
+        for account in account_root.iterdir():
+            total_accounts += 1
+            for cred_type in account.iterdir():
+                for identity in cred_type.iterdir():
+                    total_identities += 1
+                    total_credentials += self._count_creds(identity)
+                    max_credentials_per_identity = max(
+                        max_credentials_per_identity, self._count_creds(identity))
+                    if cred_type.name == "role":
+                        total_roles += 1
+        return Statistics(total_identities, total_credentials, total_roles,
+                          total_accounts, max_credentials_per_identity)
+
+    def list_identities(self) -> Iterator[IdentityHandle]:
+        arn_root = self._root.joinpath("identity_arns")
+        if not arn_root.exists():
+            return iter(())
+        def get_key(path: Path) -> Tuple[str, str]:
+            rp = path.resolve()
+            return rp.parent.name, rp.name
+        for arnlink in sorted(arn_root.iterdir(), key=get_key):
+            yield self._get_handle_from_path(arnlink)
+
+    def list_identity_credentials(self, identity: IdentityHandle) -> Iterator[CredentialInfo]:
+        id_path = self._get_path_from_identity(identity)
+        if id_path.exists() and id_path.is_dir():
+            for cred in id_path.iterdir():
+                if cred.name in self.reserved_names:
+                    continue
+                yield CredentialInfo(
+                    access_key=cred.name,
+                    created_at=datetime.fromtimestamp(cred.stat().st_ctime)
+                )
