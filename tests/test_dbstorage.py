@@ -145,30 +145,35 @@ def test_statistics_empty(empty_storage):
     assert stats.total_identities == 0
     assert stats.total_credentials == 0
     assert stats.total_roles == 0
+    assert stats.max_credentials_per_identity == 0
 
 def test_statistics_role(role_creds_storage):
     stats = role_creds_storage.test_object.get_statistics()
     assert stats.total_identities == 1
     assert stats.total_credentials == 1
     assert stats.total_roles == 1
+    assert stats.max_credentials_per_identity == 1
 
 def test_statistics_user(user_creds_storage):
     stats = user_creds_storage.test_object.get_statistics()
     assert stats.total_identities == 1
     assert stats.total_credentials == 1
     assert stats.total_roles == 0
+    assert stats.max_credentials_per_identity == 1
 
 def test_statistics_multiple(multiple_creds_storage):
     stats = multiple_creds_storage.test_object.get_statistics()
     assert stats.total_identities == 2
     assert stats.total_credentials == 3
     assert stats.total_roles == 1
+    assert stats.max_credentials_per_identity == 2
 
 def test_statistics_derived(derived_creds_storage):
     stats = derived_creds_storage.test_object.get_statistics()
     assert stats.total_identities == 2
     assert stats.total_credentials == 2
     assert stats.total_roles == 1
+    assert stats.max_credentials_per_identity == 1
 
 def test_list_identities_empty(empty_storage):
     identities = list(empty_storage.list_identities())

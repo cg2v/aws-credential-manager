@@ -1,6 +1,6 @@
 from typing import Type
 from collections.abc import Iterator
-from sqlalchemy import create_engine, Engine
+from sqlalchemy import create_engine, Engine, func
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.exc import NoResultFound, IntegrityError
 
@@ -219,12 +219,20 @@ class DBStorage:
             account_count=session.query(dbschema.AwsAccountStorage).count()
             role_count=session.query(dbschema.AwsIdentityStorage).filter_by(
                 cred_type='role').count()
+            count=func.count(dbschema.AwsCredentialStorage.aws_identity_id) # pylint: disable=not-callable
+            max_credq_query = session.query(count.label('count')).group_by(
+                dbschema.AwsCredentialStorage.aws_identity_id).order_by(
+                    count.desc()).limit(1)
+            try:
+                max_credentials_per_identity = max_credq_query.one()[0]
+            except NoResultFound:
+                max_credentials_per_identity = 0
             return Statistics(
                 total_identities=identity_count,
                 total_credentials=credential_count,
                 total_accounts=account_count,
                 total_roles=role_count,
-                max_credentials_per_identity=-1)
+                max_credentials_per_identity=max_credentials_per_identity)
     def list_identities(self) -> Iterator[IdentityHandle]:
         for row in self.session().query(dbschema.AwsIdentityStorage).order_by(
                 dbschema.AwsIdentityStorage.cred_type.asc(),
