@@ -15,38 +15,6 @@ class MemStorageIdentityData:
 class MemStorageAccountData:
     account_id: int
     identities: list[MemStorageIdentityData]
-class MemStorageIdentityHandle:
-    def __init__(self, identity: credentials.AwsIdentity):
-        self._identity = identity
-
-    @property
-    def account_id(self) -> int:
-        return int(self._identity.aws_account_id)
-
-    @property
-    def arn(self) -> str:
-        return self._identity.aws_identity
-
-    @property
-    def cred_type(self) -> credentials.CredentialType:
-        return self._identity.cred_type
-
-    @property
-    def name(self) -> str:
-        if self.cred_type == credentials.CredentialType.ROLE:
-            assert isinstance(self._identity, credentials.AwsRoleIdentity)
-            return self._identity.aws_role_name
-        assert isinstance(self._identity, credentials.AwsUserIdentity)
-        return self._identity.aws_user_name
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, IdentityHandle):
-            return False
-        return self.arn == other.arn
-
-    def __hash__(self) -> int:
-        return hash(self.arn)
-
 
 class MemStorage:
     accounts: dict[int, MemStorageAccountData]
@@ -60,7 +28,7 @@ class MemStorage:
         data = self.identities.get(arn, None)
         if data is None:
             return None
-        return MemStorageIdentityHandle(data.identity)
+        return data.identity
     def get_identity_by_account_and_role_name(self, account_id: str, role_name: str) \
         -> IdentityHandle | None:
         account = self.accounts.get(int(account_id), None)
@@ -69,7 +37,7 @@ class MemStorage:
         for identity in account.identities:
             if isinstance(identity.identity, credentials.AwsRoleIdentity) and \
                 identity.identity.aws_role_name == role_name:
-                return MemStorageIdentityHandle(identity.identity)
+                return identity.identity
         return None
     def get_parent_identity(self, identity: IdentityHandle) \
         -> Tuple[IdentityHandle, str] | tuple[None, None]:
@@ -80,7 +48,7 @@ class MemStorage:
             return None, None
         assert data.role_arn is not None
         parent = self.identities[data.parent_identity.arn]
-        return MemStorageIdentityHandle(parent.identity), data.role_arn
+        return parent.identity, data.role_arn
     def construct_identity_relationship(self, creds: credentials.Credentials,
                                   parent_creds: credentials.Credentials,
                                   role_arn: str) \
@@ -91,12 +59,10 @@ class MemStorage:
             raise ValueError('Identity not found')
         if target.parent_identity is not None:
             raise ValueError('Identity already has a parent')
-        target.parent_identity = MemStorageIdentityHandle(new_parent.identity)
+        target.parent_identity = new_parent.identity
         target.role_arn = role_arn
 
     def remove_identity_relationship(self, identity: IdentityHandle) -> None:
-        if not isinstance(identity, MemStorageIdentityHandle):
-            raise ValueError('Invalid identity')
         target = self.identities.get(identity.arn)
         assert target is not None
         for search_identity in self.identities.values():
@@ -108,18 +74,6 @@ class MemStorage:
 
     def import_credentials(self, creds: credentials.Credentials, force: bool = False) -> None:
         identity = creds.aws_identity
-        if identity.cred_type == credentials.CredentialType.ROLE:
-            assert isinstance(identity, credentials.AwsRoleIdentity)
-            name = identity.aws_role_name
-        elif identity.cred_type == credentials.CredentialType.USER:
-            assert isinstance(identity, credentials.AwsUserIdentity)
-            name = identity.aws_user_name
-        elif identity.cred_type == credentials.CredentialType.UNKNOWN:
-            if not force:
-                raise ValueError('Credential is invalid and not indexable')
-            name = identity.aws_account_id
-        else:
-            raise ValueError('Unknown cred_type')
         account_id = int(identity.aws_account_id)
         if account_id not in self.accounts:
             self.accounts[account_id] = MemStorageAccountData(
@@ -136,7 +90,7 @@ class MemStorage:
                     break
             else:
                 self.accounts[account_id].identities.append(new_identity)
-            id_key = (account_id, identity.cred_type, name)
+            id_key = (account_id, identity.cred_type, identity.name)
             self.id_lookup[id_key] = identity.aws_identity
         self.identities[creds.aws_identity.aws_identity].my_creds.append(creds)
     def get_identity_credentials(self, identity: IdentityHandle) \
