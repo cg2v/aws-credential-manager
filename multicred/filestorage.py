@@ -7,6 +7,7 @@ from .interfaces import IdentityHandle
 class FileStorage:
     _root: Path
 
+    reserved_names = {"identity.ini", "current"}
     def __init__(self, root: Path | str):
         self._root = Path(root)
         if not self._root.exists():
@@ -257,8 +258,9 @@ class FileStorage:
         if current_link.exists():
             current_link.unlink()
         for cred_link in id_path.iterdir():
+            if cred_link.name in self.reserved_names:
+                continue
             allcreds_link = self._root.joinpath("all_credentials", cred_link.name)
             if allcreds_link.exists():
                 allcreds_link.unlink()
             cred_link.unlink()
-        id_path.rmdir()
