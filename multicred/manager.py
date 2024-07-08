@@ -3,7 +3,7 @@ import sys
 import os
 import boto3
 
-from . import get_storage
+from . import get_storage, __version__
 from . import credentials
 from .interfaces import Storage
 from .importer import do_import
@@ -13,6 +13,7 @@ def build_parser():
     parser = argparse.ArgumentParser(description='Manage AWS credentials storage')
     parser.add_argument('--debug', help='Enable debug logging', action='store_true')
     subparsers = parser.add_subparsers(dest='subcommand', required=True)
+    subparsers.add_parser('version', help='Display version information')
     import_parser = subparsers.add_parser('import', help='Import AWS credentials')
     import_parser.add_argument('--profile', help='Profile name to import credentials from',
                                default='default')
@@ -143,6 +144,8 @@ def main():
         do_list_ids(iolayer)
     elif args.subcommand == 'list-creds':
         do_list_creds(args, iolayer)
+    elif args.subcommand == 'version':
+        print(f'Multicred version {__version__}')
     else:
         raise ValueError('Unknown subcommand')
 
