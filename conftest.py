@@ -26,10 +26,18 @@ def user_identity():
 
 @dataclass(frozen=True)
 class TestIdentityHandle:
-    arn: str = 'arn:aws:sts::123456789012:assumed-role/test_role/test_session'
-    account_id: int = 123456789012
-    cred_type: CredentialType = CredentialType.ROLE
-    name: str = 'test_role'
+    @property
+    def account_id(self) -> str:
+        return '123456789012'
+    @property
+    def arn(self) -> str:
+        return 'arn:aws:sts::123456789012:assumed-role/test_role/test_session'
+    @property
+    def cred_type(self) -> CredentialType:
+        return CredentialType.ROLE
+    @property
+    def name(self) -> str:
+        return 'test_role'
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, self.__class__):
             return other.__eq__(self)

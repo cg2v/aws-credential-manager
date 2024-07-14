@@ -60,8 +60,8 @@ class AwsIdentity:
         return self.aws_identity
 
     @property
-    def account_id(self) -> int:
-        return int(self.aws_account_id)
+    def account_id(self) -> str:
+        return self.aws_account_id
 
     @property
     def name(self) -> str:
