@@ -17,6 +17,7 @@ def testaws_identity_protocol(role_identity, test_identity_handle):
     assert role_identity.name == 'test_role'
     assert role_identity == 'arn:aws:sts::123456789012:assumed-role/test_role/test_session'
     assert hash(role_identity) == hash('arn:aws:sts::123456789012:assumed-role/test_role/test_session')
+    assert isinstance(test_identity_handle, IdentityHandle)
     assert role_identity == test_identity_handle
 
 def test_aws_role_identity_repr(role_identity):
