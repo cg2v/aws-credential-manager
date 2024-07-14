@@ -11,7 +11,7 @@ class CredentialType(Enum):
 @runtime_checkable
 class IdentityHandle(Protocol):
     @property
-    def account_id(self) -> int:
+    def account_id(self) -> str:
         ...
     @property
     def arn(self) -> str:
