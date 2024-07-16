@@ -37,6 +37,7 @@ def main():
         print('No credentials found', file=sys.stderr)
         sys.exit(1)
     value = {
+        'Version': 1,
         'AccessKeyId': creds.aws_access_key_id,
         'SecretAccessKey': creds.aws_secret_access_key
     }
