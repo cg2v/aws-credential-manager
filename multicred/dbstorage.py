@@ -6,7 +6,7 @@ from sqlalchemy.exc import NoResultFound, IntegrityError, MultipleResultsFound
 
 from . import dbschema
 from . import credentials
-from .base_objects import MultiCredStorageError, MultiCredLinkError
+from .base_objects import MultiCredStorageError, MultiCredLinkError, MultiCredBadRequest
 from .interfaces import IdentityHandle, Statistics, CredentialInfo
 
 class DBStorageError(MultiCredStorageError):
@@ -87,6 +87,8 @@ class DBStorage:
         return alt_id.data
 
     def import_credentials(self, creds: credentials.Credentials, force=False):
+        if not creds.is_valid:
+            raise MultiCredBadRequest('Invalid credentials cannot be imported')
         session = self.session()
         identity = creds.aws_identity
         try:
