@@ -20,6 +20,9 @@ def do_import(filename: str, iolayer: Storage, profile: str):
         textfile = get_textstream(rawfile)
         creds = credentials.Credentials.from_shared_credentials_file(
             textfile, profile_name=profile)
+    if not creds.is_valid:
+        print('Credentials are not active, cannot import', file=sys.stderr)
+        sys.exit(1)
     iolayer.import_credentials(creds)
 
 DB_PATH = 'sqlite:///' + os.path.expanduser('~/.aws/multicred.db')
