@@ -51,7 +51,7 @@ class DBStorage:
         self.session = sessionmaker(bind=self.engine)
 
     # https://stackoverflow.com/a/21146492
-    def get_one_or_create(self,
+    def _get_one_or_create(self,
                           session: Session,
                           model: Type[dbschema.Base],
                           create_method='',
@@ -60,15 +60,22 @@ class DBStorage:
         try:
             return session.query(model).filter_by(**kwargs).with_for_update().one(), True
         except NoResultFound:
-            kwargs.update(create_method_kwargs or {})
-            try:
-                with session.begin_nested():
-                    created: dbschema.Base = getattr(
-                        model, create_method, model)(**kwargs)
-                    session.add(created)
-                return created, False
-            except IntegrityError:
-                return session.query(model).filter_by(**kwargs).one(), True
+            pass
+        update_kwargs = kwargs.copy()
+        update_kwargs.update(create_method_kwargs or {})
+        try:
+            with session.begin_nested():
+                created: dbschema.Base = getattr(
+                    model, create_method, model)(**update_kwargs)
+                session.add(created)
+            return created, False
+        except IntegrityError:
+            pass
+        try:
+            return session.query(model).filter_by(**kwargs).with_for_update().one(), True
+        except NoResultFound as e:
+            raise DBStorageError('Failed to create or get object') from e
+
 
     def _get_db_identity(self, identity: IdentityHandle) -> dbschema.AwsIdentityStorage:
         if isinstance(identity, DBStorageIdentityHandle):
@@ -83,10 +90,10 @@ class DBStorage:
         session = self.session()
         identity = creds.aws_identity
         try:
-            account, _ = self.get_one_or_create(
+            account, _ = self._get_one_or_create(
                 session, dbschema.AwsAccountStorage, account_id=identity.aws_account_id)
             assert isinstance(account, dbschema.AwsAccountStorage)
-            stored_id, _ = self.get_one_or_create(
+            stored_id, _ = self._get_one_or_create(
                 session, dbschema.AwsIdentityStorage, aws_account=account,
                 cred_type=identity.cred_type.value, name=identity.name,
                 create_method_kwargs={'arn': identity.aws_identity, 'userid': identity.aws_userid})

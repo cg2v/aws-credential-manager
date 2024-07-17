@@ -1,6 +1,7 @@
 from pytest import raises
 
 from sqlalchemy.exc import NoResultFound
+from multicred.base_objects import MultiCredLinkError
 from multicred.dbschema import AwsAccountStorage, AwsIdentityStorage, AwsCredentialStorage
 
 def test_empty_storage(empty_storage):
@@ -79,7 +80,7 @@ def test_remove_parent_identity(derived_creds_storage):
     assert stored_id.arn == derived_creds_storage.user_creds.test_object.aws_identity.aws_identity
     assert role_arn.startswith('arn:aws:iam::123456789012:role/test_role')
 
-    with raises(ValueError):
+    with raises(MultiCredLinkError):
         derived_creds_storage.test_object.remove_identity_relationship(stored_id)
     derived_creds_storage.test_object.remove_identity_relationship(target_stored_id)
     stored_id_2, role_arn = derived_creds_storage.test_object.get_parent_identity(
