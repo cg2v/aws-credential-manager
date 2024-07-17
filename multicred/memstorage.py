@@ -72,7 +72,7 @@ class MemStorage:
         target.parent_identity = None
         target.role_arn = None
 
-    def import_credentials(self, creds: credentials.Credentials, force: bool = False) -> None:
+    def import_credentials(self, creds: credentials.Credentials) -> None:
         identity = creds.aws_identity
         account_id = int(identity.aws_account_id)
         if account_id not in self.accounts:
