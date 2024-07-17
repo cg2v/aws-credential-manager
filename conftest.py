@@ -127,22 +127,22 @@ class StorageWrapper:
 @fixture
 def role_creds_storage(role_credentials):
     storage = DBStorage('sqlite:///:memory:')
-    storage.import_credentials(role_credentials.test_object, role_credentials.userid)
+    storage.import_credentials(role_credentials.test_object)
     return StorageWrapper(storage, role_credentials)
 
 @fixture
 def user_creds_storage(user_credentials):
     storage = DBStorage('sqlite:///:memory:')
-    storage.import_credentials(user_credentials.test_object, user_credentials.userid)
+    storage.import_credentials(user_credentials.test_object)
     return StorageWrapper(storage, user_credentials)
 
 @fixture
 def multiple_creds_storage(role_credentials, user_credentials, other_role_credentials):
     storage = DBStorage('sqlite:///:memory:')
-    storage.import_credentials(other_role_credentials.test_object, other_role_credentials.userid)
+    storage.import_credentials(other_role_credentials.test_object)
     sleep(5)
-    storage.import_credentials(role_credentials.test_object, role_credentials.userid)
-    storage.import_credentials(user_credentials.test_object, user_credentials.userid)
+    storage.import_credentials(role_credentials.test_object)
+    storage.import_credentials(user_credentials.test_object)
     return StorageWrapper(storage, role_credentials)
 
 @dataclass
@@ -200,8 +200,8 @@ class DerivedCredsStorageWrapper:
 @fixture
 def derived_creds_storage(user_credentials, role_credentials, user_may_assume_role):
     storage = DBStorage('sqlite:///:memory:')
-    storage.import_credentials(user_credentials.test_object, user_credentials.userid)
-    storage.import_credentials(role_credentials.test_object, role_credentials.userid)
+    storage.import_credentials(user_credentials.test_object)
+    storage.import_credentials(role_credentials.test_object)
     role_arn = 'arn:aws:iam::123456789012:role/test_role'
     storage.construct_identity_relationship(role_credentials.test_object,
                                             user_credentials.test_object, role_arn)

@@ -86,7 +86,7 @@ class DBStorage:
         assert isinstance(alt_id, DBStorageIdentityHandle)
         return alt_id.data
 
-    def import_credentials(self, creds: credentials.Credentials, force=False):
+    def import_credentials(self, creds: credentials.Credentials):
         if not creds.is_valid:
             raise MultiCredBadRequest('Invalid credentials cannot be imported')
         session = self.session()
