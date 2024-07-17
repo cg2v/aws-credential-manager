@@ -2,7 +2,7 @@ from typing import Type
 from collections.abc import Iterator
 from sqlalchemy import create_engine, Engine, func
 from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy.exc import NoResultFound, IntegrityError
+from sqlalchemy.exc import NoResultFound, IntegrityError, MultipleResultsFound
 
 from . import dbschema
 from . import credentials
@@ -73,20 +73,25 @@ class DBStorage:
     def import_credentials(self, creds: credentials.Credentials, force=False):
         session = self.session()
         identity = creds.aws_identity
-        account, _ = self.get_one_or_create(
-            session, dbschema.AwsAccountStorage, account_id=identity.aws_account_id)
-        assert isinstance(account, dbschema.AwsAccountStorage)
-        stored_id, _ = self.get_one_or_create(
-            session, dbschema.AwsIdentityStorage, aws_account=account,
-            cred_type=identity.cred_type.value, name=identity.name,
-            create_method_kwargs={'arn': identity.aws_identity, 'userid': identity.aws_userid})
-        credential = dbschema.AwsCredentialStorage(
-            aws_identity=stored_id, aws_access_key_id=creds.aws_access_key_id,
-            aws_secret_access_key=creds.aws_secret_access_key,
-            aws_session_token=creds.aws_session_token)
-        session.add(credential)
-        session.commit()
-        session.close()
+        try:
+            account, _ = self.get_one_or_create(
+                session, dbschema.AwsAccountStorage, account_id=identity.aws_account_id)
+            assert isinstance(account, dbschema.AwsAccountStorage)
+            stored_id, _ = self.get_one_or_create(
+                session, dbschema.AwsIdentityStorage, aws_account=account,
+                cred_type=identity.cred_type.value, name=identity.name,
+                create_method_kwargs={'arn': identity.aws_identity, 'userid': identity.aws_userid})
+            credential = dbschema.AwsCredentialStorage(
+                aws_identity=stored_id, aws_access_key_id=creds.aws_access_key_id,
+                aws_secret_access_key=creds.aws_secret_access_key,
+                aws_session_token=creds.aws_session_token)
+            session.add(credential)
+            session.commit()
+            session.close()
+        except (IntegrityError, NoResultFound, MultipleResultsFound) as e:
+            session.rollback()
+            session.close()
+            raise DBStorageError('Failed to import credentials') from e
 
     def get_identity_by_arn(self, arn: str) -> IdentityHandle | None:
         with self.session() as session:
