@@ -171,17 +171,20 @@ class DBStorage:
         stored_target = self.get_identity_by_arn(creds.aws_identity.aws_identity)
         stored_parent = self.get_identity_by_arn(parent_creds.aws_identity.aws_identity)
         if stored_target is None or stored_parent is None:
-            raise ValueError('Identity not found')
+            raise MultiCredLinkError('Identity not found in database. Import credentials before creating links')
         assert isinstance(stored_target, DBStorageIdentityHandle)
         assert isinstance(stored_parent, DBStorageIdentityHandle)
         stored_target_id = stored_target.data
         stored_parent_id = stored_parent.data
-        with self.session() as session:
-            stored_relationship = dbschema.AwsRoleIdentitySourceStorage(
-                target_aws_identity=stored_target_id, parent_aws_identity=stored_parent_id,
-                role_arn=role_arn)
-            session.add(stored_relationship)
-            session.commit()
+        try:
+            with self.session() as session:
+                stored_relationship = dbschema.AwsRoleIdentitySourceStorage(
+                    target_aws_identity=stored_target_id, parent_aws_identity=stored_parent_id,
+                    role_arn=role_arn)
+                session.add(stored_relationship)
+                session.commit()
+        except IntegrityError as e:
+            raise MultiCredLinkError('Failed to create relationship - already exists') from e
 
     def remove_identity_relationship(self, identity: IdentityHandle):
         if not isinstance(identity, DBStorageIdentityHandle):
@@ -195,7 +198,7 @@ class DBStorage:
             except NoResultFound:
                 pass
             else:
-                raise ValueError('This identity is a parent identity and cannot be removed')
+                raise MultiCredLinkError('This identity is a parent identity and cannot be removed')
             try:
                 stored_id = session.query(dbschema.AwsRoleIdentitySourceStorage).filter_by(
                     target_aws_identity=db_id).one()
