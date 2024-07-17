@@ -131,6 +131,14 @@ class AwsUserIdentity(AwsIdentity):
 
         return cls(aws_identity=aws_identity, aws_userid=aws_user_id)
 
+@dataclass(frozen=True)
+class AwsUnknownIdentity(AwsIdentity):
+    """Class to represent an unknown AWS identity."""
+
+    @property
+    def name(self) -> str:
+        return 'UNKNOWN'
+
 def to_role_identity(aws_identity: AwsIdentity) -> AwsRoleIdentity:
     """Function to convert an AwsIdentity object to an AwsRoleIdentity object."""
     if aws_identity.cred_type == CredentialType.ROLE:
@@ -151,7 +159,8 @@ def import_identity(identity: 'GetCallerIdentityResponseTypeDef') -> AwsIdentity
         return AwsRoleIdentity.from_caller_identity(identity)
     return AwsUserIdentity.from_caller_identity(identity)
 
-UNKNOWN_IDENTITY = AwsIdentity(aws_identity='arn:aws:::UNKNOWN:unknown', aws_userid='UNKNOWN')
+UNKNOWN_IDENTITY = AwsUnknownIdentity(aws_identity='arn:aws:::UNKNOWN:unknown',
+                                      aws_userid='UNKNOWN')
 @dataclass
 class Credentials:
     """Class to represent AWS credentials and the identity of the role represented by the credentials."""
