@@ -7,6 +7,7 @@ import chardet
 from . import get_storage
 from . import credentials
 from .interfaces import Storage
+from .base_objects import MultiCredError
 
 def get_textstream(file: io.BufferedReader) -> io.TextIOWrapper:
     '''Convert a binary file to a text stream'''
@@ -16,11 +17,28 @@ def get_textstream(file: io.BufferedReader) -> io.TextIOWrapper:
 
 def do_import(filename: str, iolayer: Storage, profile: str):
     '''Import credentials from a file'''
-    with open(filename, 'rb') as rawfile:
-        textfile = get_textstream(rawfile)
-        creds = credentials.Credentials.from_shared_credentials_file(
-            textfile, profile_name=profile)
-    iolayer.import_credentials(creds)
+    try:
+        with open(filename, 'rb') as rawfile:
+            textfile = get_textstream(rawfile)
+            creds = credentials.Credentials.from_shared_credentials_file(
+                textfile, profile_name=profile)
+    except FileNotFoundError:
+        print(f'File {filename} not found', file=sys.stderr)
+        sys.exit(1)
+    except OSError as e:
+        print(f'Error reading file: {e}', file=sys.stderr)
+        sys.exit(1)
+    except credentials.MissingCredentialsError as e:
+        print(f'Error reading credentials: {e}', file=sys.stderr)
+        sys.exit(1)
+    if not creds.is_valid:
+        print('Credentials are not active, cannot import', file=sys.stderr)
+        sys.exit(1)
+    try:
+        iolayer.import_credentials(creds)
+    except MultiCredError as e:
+        print(f'Error importing credentials: {e}', file=sys.stderr)
+        sys.exit(1)
 
 DB_PATH = 'sqlite:///' + os.path.expanduser('~/.aws/multicred.db')
 def main():
