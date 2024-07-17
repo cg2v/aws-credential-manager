@@ -53,15 +53,12 @@ def do_unlink(args: argparse.Namespace, iolayer: Storage):
         sys.exit(1)
     iolayer.remove_identity_relationship(identity)
 
-def do_delete(args: argparse.Namespace, iolayer: Storage):
-    if args.access_key:
-        iolayer.delete_credentials_by_key(args.access_key)
-    elif args.account and args.role_name:
-        identity = iolayer.get_identity_by_account_and_role_name(args.account, args.role_name)
-        if identity is None:
-            print('Identity not found', file=sys.stderr)
-            sys.exit(1)
-        iolayer.purge_identity_credentials(identity)
+def do_purge(args: argparse.Namespace, iolayer: Storage):
+    identity = iolayer.get_identity_by_account_and_role_name(args.account, args.role_name)
+    if identity is None:
+        print('Identity not found', file=sys.stderr)
+        sys.exit(1)
+    iolayer.purge_identity_credentials(identity)
 
 def do_link(args: argparse.Namespace, iolayer: Storage):
     parent_identity = iolayer.get_identity_by_account_and_role_name(
@@ -136,8 +133,10 @@ def main():
         do_link(args, iolayer)
     elif args.subcommand == 'unlink':
         do_unlink(args, iolayer)
-    elif args.subcommand == 'delete' or args.subcommand == 'purge':
-        do_delete(args, iolayer)
+    elif args.subcommand == 'delete':
+        iolayer.delete_credentials_by_key(args.access_key)
+    elif args.subcommand == 'purge':
+        do_purge(args, iolayer)
     elif args.subcommand == 'stats':
         do_stats(iolayer)
     elif args.subcommand == 'list-ids':
