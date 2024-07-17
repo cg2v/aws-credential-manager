@@ -6,7 +6,14 @@ from sqlalchemy.exc import NoResultFound, IntegrityError
 
 from . import dbschema
 from . import credentials
+from .base_objects import MultiCredStorageError, MultiCredLinkError
 from .interfaces import IdentityHandle, Statistics, CredentialInfo
+
+class DBStorageError(MultiCredStorageError):
+    pass
+
+class MissingIdentityError(DBStorageError):
+    pass
 
 class DBStorageIdentityHandle:
     data: dbschema.AwsIdentityStorage
