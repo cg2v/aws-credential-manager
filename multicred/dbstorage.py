@@ -2,11 +2,18 @@ from typing import Type
 from collections.abc import Iterator
 from sqlalchemy import create_engine, Engine, func
 from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy.exc import NoResultFound, IntegrityError
+from sqlalchemy.exc import NoResultFound, IntegrityError, MultipleResultsFound
 
 from . import dbschema
 from . import credentials
+from .base_objects import MultiCredStorageError, MultiCredLinkError
 from .interfaces import IdentityHandle, Statistics, CredentialInfo
+
+class DBStorageError(MultiCredStorageError):
+    pass
+
+class MissingIdentityError(DBStorageError):
+    pass
 
 class DBStorageIdentityHandle:
     data: dbschema.AwsIdentityStorage
@@ -44,7 +51,7 @@ class DBStorage:
         self.session = sessionmaker(bind=self.engine)
 
     # https://stackoverflow.com/a/21146492
-    def get_one_or_create(self,
+    def _get_one_or_create(self,
                           session: Session,
                           model: Type[dbschema.Base],
                           create_method='',
@@ -53,33 +60,54 @@ class DBStorage:
         try:
             return session.query(model).filter_by(**kwargs).with_for_update().one(), True
         except NoResultFound:
-            kwargs.update(create_method_kwargs or {})
-            try:
-                with session.begin_nested():
-                    created: dbschema.Base = getattr(
-                        model, create_method, model)(**kwargs)
-                    session.add(created)
-                return created, False
-            except IntegrityError:
-                return session.query(model).filter_by(**kwargs).one(), True
+            pass
+        update_kwargs = kwargs.copy()
+        update_kwargs.update(create_method_kwargs or {})
+        try:
+            with session.begin_nested():
+                created: dbschema.Base = getattr(
+                    model, create_method, model)(**update_kwargs)
+                session.add(created)
+            return created, False
+        except IntegrityError:
+            pass
+        try:
+            return session.query(model).filter_by(**kwargs).with_for_update().one(), True
+        except NoResultFound as e:
+            raise DBStorageError('Failed to create or get object') from e
+
+
+    def _get_db_identity(self, identity: IdentityHandle) -> dbschema.AwsIdentityStorage:
+        if isinstance(identity, DBStorageIdentityHandle):
+            return identity.data
+        alt_id = self.get_identity_by_arn(identity.arn)
+        if alt_id is None:
+            raise MissingIdentityError('Identity not found in database.')
+        assert isinstance(alt_id, DBStorageIdentityHandle)
+        return alt_id.data
 
     def import_credentials(self, creds: credentials.Credentials, force=False):
         session = self.session()
         identity = creds.aws_identity
-        account, _ = self.get_one_or_create(
-            session, dbschema.AwsAccountStorage, account_id=identity.aws_account_id)
-        assert isinstance(account, dbschema.AwsAccountStorage)
-        stored_id, _ = self.get_one_or_create(
-            session, dbschema.AwsIdentityStorage, aws_account=account,
-            cred_type=identity.cred_type.value, name=identity.name,
-            create_method_kwargs={'arn': identity.aws_identity, 'userid': identity.aws_userid})
-        credential = dbschema.AwsCredentialStorage(
-            aws_identity=stored_id, aws_access_key_id=creds.aws_access_key_id,
-            aws_secret_access_key=creds.aws_secret_access_key,
-            aws_session_token=creds.aws_session_token)
-        session.add(credential)
-        session.commit()
-        session.close()
+        try:
+            account, _ = self._get_one_or_create(
+                session, dbschema.AwsAccountStorage, account_id=identity.aws_account_id)
+            assert isinstance(account, dbschema.AwsAccountStorage)
+            stored_id, _ = self._get_one_or_create(
+                session, dbschema.AwsIdentityStorage, aws_account=account,
+                cred_type=identity.cred_type.value, name=identity.name,
+                create_method_kwargs={'arn': identity.aws_identity, 'userid': identity.aws_userid})
+            credential = dbschema.AwsCredentialStorage(
+                aws_identity=stored_id, aws_access_key_id=creds.aws_access_key_id,
+                aws_secret_access_key=creds.aws_secret_access_key,
+                aws_session_token=creds.aws_session_token)
+            session.add(credential)
+            session.commit()
+            session.close()
+        except (IntegrityError, NoResultFound, MultipleResultsFound) as e:
+            session.rollback()
+            session.close()
+            raise DBStorageError('Failed to import credentials') from e
 
     def get_identity_by_arn(self, arn: str) -> IdentityHandle | None:
         with self.session() as session:
@@ -91,9 +119,10 @@ class DBStorage:
         return DBStorageIdentityHandle(stored_id)
 
     def get_identity_credentials(self, identity: IdentityHandle) -> credentials.Credentials | None:
-        if not isinstance(identity, DBStorageIdentityHandle):
-            raise ValueError('Identity is not from this storage')
-        db_id = identity.data
+        try:
+            db_id = self._get_db_identity(identity)
+        except MissingIdentityError:
+            return None
         with self.session() as session:
             credential = session.query(dbschema.AwsCredentialStorage).filter_by(
                 aws_identity=db_id).order_by(
@@ -141,9 +170,10 @@ class DBStorage:
         return DBStorageIdentityHandle(stored_id)
 
     def get_parent_identity(self, identity: IdentityHandle):
-        if not isinstance(identity, DBStorageIdentityHandle):
-            raise ValueError('Identity is not from this storage')
-        db_id = identity.data
+        try:
+            db_id = self._get_db_identity(identity)
+        except MissingIdentityError:
+            return None, None
         with self.session() as session:
             try:
                 parent = session.query(dbschema.AwsRoleIdentitySourceStorage).filter_by(
@@ -159,22 +189,26 @@ class DBStorage:
         stored_target = self.get_identity_by_arn(creds.aws_identity.aws_identity)
         stored_parent = self.get_identity_by_arn(parent_creds.aws_identity.aws_identity)
         if stored_target is None or stored_parent is None:
-            raise ValueError('Identity not found')
+            raise MultiCredLinkError('Identity not found in database. Import credentials before creating links')
         assert isinstance(stored_target, DBStorageIdentityHandle)
         assert isinstance(stored_parent, DBStorageIdentityHandle)
         stored_target_id = stored_target.data
         stored_parent_id = stored_parent.data
-        with self.session() as session:
-            stored_relationship = dbschema.AwsRoleIdentitySourceStorage(
-                target_aws_identity=stored_target_id, parent_aws_identity=stored_parent_id,
-                role_arn=role_arn)
-            session.add(stored_relationship)
-            session.commit()
+        try:
+            with self.session() as session:
+                stored_relationship = dbschema.AwsRoleIdentitySourceStorage(
+                    target_aws_identity=stored_target_id, parent_aws_identity=stored_parent_id,
+                    role_arn=role_arn)
+                session.add(stored_relationship)
+                session.commit()
+        except IntegrityError as e:
+            raise MultiCredLinkError('Failed to create relationship - already exists') from e
 
     def remove_identity_relationship(self, identity: IdentityHandle):
-        if not isinstance(identity, DBStorageIdentityHandle):
-            raise ValueError('Identity is not from this storage')
-        db_id = identity.data
+        try:
+            db_id = self._get_db_identity(identity)
+        except MissingIdentityError as e:
+            raise MultiCredLinkError('Identity not found in database.') from e
         with self.session() as session:
             try:
                 session.query(dbschema.AwsRoleIdentitySourceStorage).filter_by(
@@ -183,7 +217,7 @@ class DBStorage:
             except NoResultFound:
                 pass
             else:
-                raise ValueError('This identity is a parent identity and cannot be removed')
+                raise MultiCredLinkError('This identity is a parent identity and cannot be removed')
             try:
                 stored_id = session.query(dbschema.AwsRoleIdentitySourceStorage).filter_by(
                     target_aws_identity=db_id).one()
@@ -203,9 +237,10 @@ class DBStorage:
                 pass
 
     def purge_identity_credentials(self, identity: IdentityHandle):
-        if not isinstance(identity, DBStorageIdentityHandle):
-            raise ValueError('Identity is not from this storage')
-        db_id = identity.data
+        try:
+            db_id = self._get_db_identity(identity)
+        except MissingIdentityError:
+            return
         with self.session() as session:
             try:
                 session.query(dbschema.AwsCredentialStorage).filter_by(
@@ -241,9 +276,10 @@ class DBStorage:
             ).all():
             yield DBStorageIdentityHandle(row)
     def list_identity_credentials(self, identity: IdentityHandle) -> Iterator[CredentialInfo]:
-        if not isinstance(identity, DBStorageIdentityHandle):
-            raise ValueError('Identity is not from this storage')
-        db_id = identity.data
+        try:
+            db_id = self._get_db_identity(identity)
+        except MissingIdentityError:
+            return
         with self.session() as session:
             for row in session.query(
             dbschema.AwsCredentialStorage).filter_by(

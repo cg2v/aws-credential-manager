@@ -26,3 +26,18 @@ class IdentityHandle(Protocol):
         ...
     def __hash__(self) -> int:
         ...
+
+class MultiCredError(Exception):
+    """Base class for all exceptions in multicred"""
+
+class MultiCredStorageError(MultiCredError):
+    """Base class for storage related exceptions"""
+
+class MultiCredResolverError(MultiCredError):
+    """Base class for resolver related exceptions"""
+
+class MultiCredBadRequest(MultiCredError, ValueError):
+    """Exception raised for bad requests"""
+
+class MultiCredLinkError(MultiCredBadRequest):
+    """Exception raised for bad link/unlink requests"""

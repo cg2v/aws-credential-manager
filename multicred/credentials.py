@@ -6,19 +6,14 @@ from configparser import ConfigParser
 import botocore.exceptions
 from boto3 import session
 
-from .base_objects import IdentityHandle, CredentialType
+from .base_objects import IdentityHandle, CredentialType, MultiCredError
 
 if TYPE_CHECKING:
     from mypy_boto3_sts.type_defs import GetCallerIdentityResponseTypeDef
 
 
-class MultiCredError(Exception):
-    pass
-
-
 class MissingCredentialsError(MultiCredError, KeyError):
     pass
-
 
 class ExpiredCredentialsError(MultiCredError):
     pass
