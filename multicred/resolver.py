@@ -20,11 +20,11 @@ class StorageBasedResolver(interfaces.Resolver):
         rv = []
         while True:
             creds = self._storage.get_identity_credentials(identity)
-            if creds is not None:
+            if creds is not None and creds.is_valid:
                 break
             parent, role_name = self._storage.get_parent_identity(identity)
             if parent is None:
-                break
+                return [], None
             assert role_name is not None
             rv.append(ResolverState(identity=identity, role_name=role_name))
             identity = parent
