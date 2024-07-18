@@ -5,7 +5,11 @@ from datetime import datetime
 from configparser import ConfigParser
 
 from . import credentials
-from .interfaces import IdentityHandle, Statistics, CredentialInfo
+from .base_objects import IdentityHandle, MultiCredError, MultiCredBadRequest, MultiCredLinkError
+from .interfaces import Statistics, CredentialInfo
+
+class FileStorageError(MultiCredError):
+    pass
 
 class FileStorage:
     _root: Path
@@ -16,12 +20,12 @@ class FileStorage:
         if not self._root.exists():
             self._root.mkdir()
         if not self._root.is_dir():
-            raise ValueError(f"{root} is not a directory")
+            raise FileStorageError(f"{root} is not a directory")
         marker = self._root.joinpath('.multicred.marker')
         if not list(self._root.iterdir()):
             marker.touch()
         if not marker.exists():
-            raise ValueError(f"Folder {root} does not belong to multicred")
+            raise FileStorageError(f"Folder {root} does not belong to multicred")
 
     def _get_idini_path(self, id_path: Path) -> Path:
         return id_path.joinpath("identity.ini")
@@ -29,7 +33,7 @@ class FileStorage:
     def _get_idini(self, id_path: Path) -> ConfigParser:
         inifile = self._get_idini_path(id_path)
         if not inifile.exists():
-            raise ValueError(f"Identity {id_path} does not have an ini file")
+            raise FileStorageError(f"Identity {id_path} does not have an ini file")
         config = ConfigParser(delimiters=('='), interpolation=None)
         config.read(inifile)
         return config
@@ -59,7 +63,7 @@ class FileStorage:
         if not id_path.exists():
             id_path.mkdir(parents=True)
         if not id_path.is_dir():
-            raise ValueError(f"Identity path {id_path} is not a directory")
+            raise FileStorageError(f"Identity path {id_path} is not a directory")
         inifile = id_path.joinpath("identity.ini")
         if not inifile.exists():
             config = ConfigParser()
@@ -119,12 +123,12 @@ class FileStorage:
                                     role_arn: str) \
                                         -> None:
         if creds.aws_identity.cred_type != credentials.CredentialType.ROLE:
-            raise ValueError("Can only construct relationships for roles")
+            raise MultiCredLinkError("Can only construct relationships for roles")
         id_path = self._get_path_from_identity(creds.aws_identity)
         if not id_path.exists():
             id_path.mkdir(parents=True)
         if not id_path.is_dir():
-            raise ValueError(f"Identity path {id_path} is not a directory")
+            raise FileStorageError(f"Identity path {id_path} is not a directory")
         config = self._get_idini(id_path)
         if 'parent' not in config:
             config.add_section('parent')
@@ -143,12 +147,12 @@ class FileStorage:
         if not id_path.exists():
             return
         if not id_path.is_dir():
-            raise ValueError(f"Identity path {id_path} is not a directory")
+            raise FileStorageError(f"Identity path {id_path} is not a directory")
         config = self._get_idini(id_path)
         # XXX the test is bad and requires the child exception to be raised
         # even if there are no parents
         if 'children' in config and len(config.options('children')) > 0:
-            raise ValueError("This identity has dependent children")
+            raise MultiCredLinkError("This identity has dependent children")
         if 'parent' not in config:
             return
         parent_arn = config.get("parent", "parent_arn")
@@ -163,11 +167,13 @@ class FileStorage:
         config.remove_section('parent')
         self._update_idini(id_path, config)
 
-    def import_credentials(self, creds: credentials.Credentials, force: bool = False) -> None:
+    def import_credentials(self, creds: credentials.Credentials) -> None:
+        if not creds.is_valid:
+            raise MultiCredBadRequest("Invalid credentials cannot be imported")
         id_path = self._create_identity_path(creds)
         cred_path = id_path.joinpath(creds.aws_access_key_id)
-        if cred_path.exists() and not force:
-            raise ValueError("Credentials already exist")
+        if cred_path.exists():
+            raise MultiCredBadRequest("Credentials already exist")
         with cred_path.open("w", encoding="ASCII") as file:
             config = ConfigParser()
             config.add_section("credentials")
@@ -193,7 +199,7 @@ class FileStorage:
         if not allcreds_path.exists():
             allcreds_path.mkdir()
         if not allcreds_path.is_dir():
-            raise ValueError(f"Credentials path {allcreds_path} is not a directory")
+            raise FileStorageError(f"Credentials path {allcreds_path} is not a directory")
         cred_link_target_1 = cred_path.resolve().relative_to(self._root)
         cred_link_target = Path("..", cred_link_target_1)
         allcreds_link = allcreds_path.joinpath(creds.aws_access_key_id)
@@ -224,7 +230,7 @@ class FileStorage:
         if not allcreds_path.exists():
             return None
         if not allcreds_path.is_dir():
-            raise ValueError(f"Credentials path {allcreds_path} is not a directory")
+            raise FileStorageError(f"Credentials path {allcreds_path} is not a directory")
         cred_path = allcreds_path.joinpath(access_key)
         if not cred_path.is_file() or not cred_path.exists():
             return None
@@ -241,7 +247,7 @@ class FileStorage:
         if not allcreds_path.exists():
             return
         if not allcreds_path.is_dir():
-            raise ValueError(f"Credentials path {allcreds_path} is not a directory")
+            raise FileStorageError(f"Credentials path {allcreds_path} is not a directory")
         allcreds_link = allcreds_path.joinpath(access_key)
         cred_link_target = allcreds_link.resolve()
         cred_link_id = cred_link_target.parent
@@ -256,7 +262,7 @@ class FileStorage:
         if not id_path.exists():
             return
         if not id_path.is_dir():
-            raise ValueError(f"Identity path {id_path} is not a directory")
+            raise FileStorageError(f"Identity path {id_path} is not a directory")
         current_link = id_path.joinpath("current")
         if current_link.exists():
             current_link.unlink()
