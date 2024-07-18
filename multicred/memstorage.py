@@ -2,7 +2,7 @@ from typing import Tuple
 from dataclasses import dataclass, field
 
 from . import credentials
-from .interfaces import IdentityHandle
+from .base_objects import IdentityHandle, MultiCredLinkError, MultiCredBadRequest
 
 
 @dataclass
@@ -56,9 +56,9 @@ class MemStorage:
         target = self.identities.get(creds.aws_identity.aws_identity)
         new_parent = self.identities.get(parent_creds.aws_identity.aws_identity)
         if target is None or new_parent is None:
-            raise ValueError('Identity not found')
+            raise MultiCredLinkError('Identity not found')
         if target.parent_identity is not None:
-            raise ValueError('Identity already has a parent')
+            raise MultiCredLinkError('Identity already has a parent')
         target.parent_identity = new_parent.identity
         target.role_arn = role_arn
 
@@ -68,11 +68,13 @@ class MemStorage:
         for search_identity in self.identities.values():
             if search_identity.parent_identity is not None and \
                 search_identity.parent_identity.arn == identity.arn:
-                raise ValueError('Identity is a parent')
+                raise MultiCredLinkError('Identity is a parent')
         target.parent_identity = None
         target.role_arn = None
 
     def import_credentials(self, creds: credentials.Credentials) -> None:
+        if not creds.is_valid:
+            raise MultiCredBadRequest('Invalid credentials cannot be imported')
         identity = creds.aws_identity
         account_id = int(identity.aws_account_id)
         if account_id not in self.accounts:
