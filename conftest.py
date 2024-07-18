@@ -7,6 +7,7 @@ from moto import mock_aws
 
 from multicred.credentials  import CredentialType, Credentials, AwsRoleIdentity, AwsUserIdentity
 from multicred.dbstorage import DBStorage
+from multicred.memstorage import MemStorage
 from multicred.resolver import StorageBasedResolver
 from multicred.interfaces import Storage, Resolver
 
@@ -111,9 +112,21 @@ def unknown_credentials():
         aws_secret_access_key='UNKNOWN',
     )
 
-@fixture
-def empty_storage():
+def get_memstorage():
+    return MemStorage()
+
+def get_dbstorage():
     return DBStorage('sqlite:///:memory:')
+
+@fixture(params=[get_dbstorage, get_memstorage])
+def storage(request) -> Storage:
+    rv = request.param()
+    assert isinstance(rv, (DBStorage, MemStorage))
+    return rv
+
+@fixture
+def empty_storage(storage):
+    return storage
 
 @fixture
 def empty_resolver(empty_storage):
@@ -125,20 +138,17 @@ class StorageWrapper:
     credentials: CredentialsWrapper
 
 @fixture
-def role_creds_storage(role_credentials):
-    storage = DBStorage('sqlite:///:memory:')
+def role_creds_storage(storage, role_credentials):
     storage.import_credentials(role_credentials.test_object)
     return StorageWrapper(storage, role_credentials)
 
 @fixture
-def user_creds_storage(user_credentials):
-    storage = DBStorage('sqlite:///:memory:')
+def user_creds_storage(storage, user_credentials):
     storage.import_credentials(user_credentials.test_object)
     return StorageWrapper(storage, user_credentials)
 
 @fixture
-def multiple_creds_storage(role_credentials, user_credentials, other_role_credentials):
-    storage = DBStorage('sqlite:///:memory:')
+def multiple_creds_storage(storage, role_credentials, user_credentials, other_role_credentials):
     storage.import_credentials(other_role_credentials.test_object)
     sleep(5)
     storage.import_credentials(role_credentials.test_object)
@@ -198,8 +208,7 @@ class DerivedCredsStorageWrapper:
     role_arn: str
 
 @fixture
-def derived_creds_storage(user_credentials, role_credentials, user_may_assume_role):
-    storage = DBStorage('sqlite:///:memory:')
+def derived_creds_storage(storage, user_credentials, role_credentials, user_may_assume_role):
     storage.import_credentials(user_credentials.test_object)
     storage.import_credentials(role_credentials.test_object)
     role_arn = 'arn:aws:iam::123456789012:role/test_role'
