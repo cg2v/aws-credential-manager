@@ -77,10 +77,12 @@ class DBStorage:
             raise DBStorageError('Failed to create or get object') from e
 
 
-    def _get_db_identity(self, identity: IdentityHandle) -> dbschema.AwsIdentityStorage:
+    def _get_db_identity(self, session: Session, identity: IdentityHandle) -> dbschema.AwsIdentityStorage:
         if isinstance(identity, DBStorageIdentityHandle):
-            return identity.data
-        alt_id = self.get_identity_by_arn(identity.arn)
+            rv = session.get(dbschema.AwsIdentityStorage, identity.data.id)
+            if rv is not None:
+                return rv
+        alt_id = self._get_identity_by_arn(session, identity.arn)
         if alt_id is None:
             raise MissingIdentityError('Identity not found in database.')
         assert isinstance(alt_id, DBStorageIdentityHandle)
@@ -89,56 +91,56 @@ class DBStorage:
     def import_credentials(self, creds: credentials.Credentials):
         if not creds.is_valid:
             raise MultiCredBadRequest('Invalid credentials cannot be imported')
-        session = self.session()
         identity = creds.aws_identity
+        with self.session() as session:
+            try:
+                account, _ = self._get_one_or_create(
+                    session, dbschema.AwsAccountStorage, account_id=identity.aws_account_id)
+                assert isinstance(account, dbschema.AwsAccountStorage)
+                stored_id, _ = self._get_one_or_create(
+                    session, dbschema.AwsIdentityStorage, aws_account=account,
+                    cred_type=identity.cred_type.value, name=identity.name,
+                    create_method_kwargs={'arn': identity.aws_identity, 'userid': identity.aws_userid})
+                credential = dbschema.AwsCredentialStorage(
+                    aws_identity=stored_id, aws_access_key_id=creds.aws_access_key_id,
+                    aws_secret_access_key=creds.aws_secret_access_key,
+                    aws_session_token=creds.aws_session_token)
+                session.add(credential)
+                session.commit()
+            except (IntegrityError, NoResultFound, MultipleResultsFound) as e:
+                session.rollback()
+                raise DBStorageError('Failed to import credentials') from e
+
+    def _get_identity_by_arn(self, session: Session, arn: str) -> IdentityHandle | None:
         try:
-            account, _ = self._get_one_or_create(
-                session, dbschema.AwsAccountStorage, account_id=identity.aws_account_id)
-            assert isinstance(account, dbschema.AwsAccountStorage)
-            stored_id, _ = self._get_one_or_create(
-                session, dbschema.AwsIdentityStorage, aws_account=account,
-                cred_type=identity.cred_type.value, name=identity.name,
-                create_method_kwargs={'arn': identity.aws_identity, 'userid': identity.aws_userid})
-            credential = dbschema.AwsCredentialStorage(
-                aws_identity=stored_id, aws_access_key_id=creds.aws_access_key_id,
-                aws_secret_access_key=creds.aws_secret_access_key,
-                aws_session_token=creds.aws_session_token)
-            session.add(credential)
-            session.commit()
-            session.close()
-        except (IntegrityError, NoResultFound, MultipleResultsFound) as e:
-            session.rollback()
-            session.close()
-            raise DBStorageError('Failed to import credentials') from e
+            stored_id = session.query(dbschema.AwsIdentityStorage).filter_by(
+                arn=arn).one()
+        except NoResultFound:
+            return None
+        return DBStorageIdentityHandle(stored_id)
 
     def get_identity_by_arn(self, arn: str) -> IdentityHandle | None:
         with self.session() as session:
-            try:
-                stored_id = session.query(dbschema.AwsIdentityStorage).filter_by(
-                    arn=arn).one()
-            except NoResultFound:
-                return None
-        return DBStorageIdentityHandle(stored_id)
+            return self._get_identity_by_arn(session, arn)
 
     def get_identity_credentials(self, identity: IdentityHandle) -> credentials.Credentials | None:
-        try:
-            db_id = self._get_db_identity(identity)
-        except MissingIdentityError:
-            return None
         with self.session() as session:
+            try:
+                db_id = self._get_db_identity(session, identity)
+            except MissingIdentityError:
+                return None
             credential = session.query(dbschema.AwsCredentialStorage).filter_by(
                 aws_identity=db_id).order_by(
                     dbschema.AwsCredentialStorage.created_at.desc()).first()
-
-        if credential is None:
-            return None
-        rv = credentials.Credentials(
-            aws_access_key_id=credential.aws_access_key_id,
-            aws_secret_access_key=credential.aws_secret_access_key,
-            aws_session_token=credential.aws_session_token)
-        if not rv.is_valid:
-            rv.aws_identity = credentials.AwsIdentity(
-                aws_identity=identity.arn, aws_userid=db_id.userid)
+            if credential is None:
+                return None
+            rv = credentials.Credentials(
+                aws_access_key_id=credential.aws_access_key_id,
+                aws_secret_access_key=credential.aws_secret_access_key,
+                aws_session_token=credential.aws_session_token)
+            if not rv.is_valid:
+                rv.aws_identity = credentials.AwsIdentity(
+                    aws_identity=identity.arn, aws_userid=db_id.userid)
         return rv
 
 
@@ -151,32 +153,36 @@ class DBStorage:
                     id=credential.aws_identity_id).one()
             except NoResultFound:
                 return None
-        rv = credentials.Credentials(
-            aws_access_key_id=credential.aws_access_key_id,
-            aws_secret_access_key=credential.aws_secret_access_key,
-            aws_session_token=credential.aws_session_token)
-        if not rv.is_valid:
-            rv.aws_identity = credentials.AwsIdentity(
-                aws_identity=stored_id.arn, aws_userid=stored_id.userid)
-        return rv
+            rv = credentials.Credentials(
+                aws_access_key_id=credential.aws_access_key_id,
+                aws_secret_access_key=credential.aws_secret_access_key,
+                aws_session_token=credential.aws_session_token)
+            if not rv.is_valid:
+                rv.aws_identity = credentials.AwsIdentity(
+                    aws_identity=stored_id.arn, aws_userid=stored_id.userid)
+            return rv
+
+    def _get_identity_by_account_and_role_name(self, session: Session, account_id: str,
+                                               role_name: str) -> IdentityHandle | None:
+        try:
+            account = session.query(dbschema.AwsAccountStorage).filter_by(
+                account_id=account_id).one()
+            stored_id = session.query(dbschema.AwsIdentityStorage).filter_by(
+                aws_account_id=account.id, name=role_name).one()
+        except NoResultFound:
+            return None
+        return DBStorageIdentityHandle(stored_id)
 
     def get_identity_by_account_and_role_name(self, account_id: str, role_name: str) -> IdentityHandle | None:
         with self.session() as session:
-            try:
-                account = session.query(dbschema.AwsAccountStorage).filter_by(
-                    account_id=account_id).one()
-                stored_id = session.query(dbschema.AwsIdentityStorage).filter_by(
-                    aws_account_id=account.id, name=role_name).one()
-            except NoResultFound:
-                return None
-        return DBStorageIdentityHandle(stored_id)
+            return self._get_identity_by_account_and_role_name(session, account_id, role_name)
 
     def get_parent_identity(self, identity: IdentityHandle):
-        try:
-            db_id = self._get_db_identity(identity)
-        except MissingIdentityError:
-            return None, None
         with self.session() as session:
+            try:
+                db_id = self._get_db_identity(session, identity)
+            except MissingIdentityError:
+                return None, None
             try:
                 parent = session.query(dbschema.AwsRoleIdentitySourceStorage).filter_by(
                     target_aws_identity_id=db_id.id).one()
@@ -184,34 +190,34 @@ class DBStorage:
                     id=parent.parent_aws_identity_id).one()
             except NoResultFound:
                 return None, None
-        return DBStorageIdentityHandle(stored_id), parent.role_arn
+            return DBStorageIdentityHandle(stored_id), parent.role_arn
 
     def construct_identity_relationship(self, creds: credentials.Credentials, parent_creds:
                                         credentials.Credentials, role_arn: str):
-        stored_target = self.get_identity_by_arn(creds.aws_identity.aws_identity)
-        stored_parent = self.get_identity_by_arn(parent_creds.aws_identity.aws_identity)
-        if stored_target is None or stored_parent is None:
-            raise MultiCredLinkError('Identity not found in database. Import credentials before creating links')
-        assert isinstance(stored_target, DBStorageIdentityHandle)
-        assert isinstance(stored_parent, DBStorageIdentityHandle)
-        stored_target_id = stored_target.data
-        stored_parent_id = stored_parent.data
-        try:
-            with self.session() as session:
+        with self.session() as session:
+            stored_target = self._get_identity_by_arn(session, creds.aws_identity.aws_identity)
+            stored_parent = self._get_identity_by_arn(session, parent_creds.aws_identity.aws_identity)
+            if stored_target is None or stored_parent is None:
+                raise MultiCredLinkError('Identity not found in database. Import credentials before creating links')
+            assert isinstance(stored_target, DBStorageIdentityHandle)
+            assert isinstance(stored_parent, DBStorageIdentityHandle)
+            stored_target_id = stored_target.data
+            stored_parent_id = stored_parent.data
+            try:
                 stored_relationship = dbschema.AwsRoleIdentitySourceStorage(
                     target_aws_identity=stored_target_id, parent_aws_identity=stored_parent_id,
                     role_arn=role_arn)
                 session.add(stored_relationship)
                 session.commit()
-        except IntegrityError as e:
-            raise MultiCredLinkError('Failed to create relationship - already exists') from e
+            except IntegrityError as e:
+                raise MultiCredLinkError('Failed to create relationship - already exists') from e
 
     def remove_identity_relationship(self, identity: IdentityHandle):
-        try:
-            db_id = self._get_db_identity(identity)
-        except MissingIdentityError as e:
-            raise MultiCredLinkError('Identity not found in database.') from e
         with self.session() as session:
+            try:
+                db_id = self._get_db_identity(session, identity)
+            except MissingIdentityError as e:
+                raise MultiCredLinkError('Identity not found in database.') from e
             try:
                 session.query(dbschema.AwsRoleIdentitySourceStorage).filter_by(
                     parent_aws_identity=db_id).one()
@@ -239,11 +245,11 @@ class DBStorage:
                 pass
 
     def purge_identity_credentials(self, identity: IdentityHandle):
-        try:
-            db_id = self._get_db_identity(identity)
-        except MissingIdentityError:
-            return
         with self.session() as session:
+            try:
+                db_id = self._get_db_identity(session, identity)
+            except MissingIdentityError:
+                return
             try:
                 session.query(dbschema.AwsCredentialStorage).filter_by(
                     aws_identity=db_id).delete()
@@ -278,11 +284,11 @@ class DBStorage:
             ).all():
             yield DBStorageIdentityHandle(row)
     def list_identity_credentials(self, identity: IdentityHandle) -> Iterator[CredentialInfo]:
-        try:
-            db_id = self._get_db_identity(identity)
-        except MissingIdentityError:
-            return
         with self.session() as session:
+            try:
+                db_id = self._get_db_identity(session, identity)
+            except MissingIdentityError:
+                return
             for row in session.query(
             dbschema.AwsCredentialStorage).filter_by(
                 aws_identity=db_id).order_by(
