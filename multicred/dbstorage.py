@@ -129,11 +129,9 @@ class DBStorage:
                 db_id = self._get_db_identity(session, identity)
             except MissingIdentityError:
                 return None
-            credential = session.query(dbschema.AwsCredentialStorage).filter_by(
-                aws_identity=db_id).order_by(
-                    dbschema.AwsCredentialStorage.created_at.desc()).first()
-            if credential is None:
+            if len(db_id.credentials) == 0:
                 return None
+            credential = db_id.credentials[0]
             rv = credentials.Credentials(
                 aws_access_key_id=credential.aws_access_key_id,
                 aws_secret_access_key=credential.aws_secret_access_key,
@@ -183,13 +181,10 @@ class DBStorage:
                 db_id = self._get_db_identity(session, identity)
             except MissingIdentityError:
                 return None, None
-            try:
-                parent = session.query(dbschema.AwsRoleIdentitySourceStorage).filter_by(
-                    target_aws_identity_id=db_id.id).one()
-                stored_id = session.query(dbschema.AwsIdentityStorage).filter_by(
-                    id=parent.parent_aws_identity_id).one()
-            except NoResultFound:
+            if len(db_id.source_identity) == 0:
                 return None, None
+            parent : dbschema.AwsRoleIdentitySourceStorage = db_id.source_identity[0]
+            stored_id : dbschema.AwsIdentityStorage = parent.parent_aws_identity
             return DBStorageIdentityHandle(stored_id), parent.role_arn
 
     def construct_identity_relationship(self, creds: credentials.Credentials, parent_creds:
@@ -251,8 +246,7 @@ class DBStorage:
             except MissingIdentityError:
                 return
             try:
-                session.query(dbschema.AwsCredentialStorage).filter_by(
-                    aws_identity=db_id).delete()
+                db_id.credentials.clear()
                 session.commit()
             except NoResultFound:
                 pass
@@ -289,10 +283,7 @@ class DBStorage:
                 db_id = self._get_db_identity(session, identity)
             except MissingIdentityError:
                 return
-            for row in session.query(
-            dbschema.AwsCredentialStorage).filter_by(
-                aws_identity=db_id).order_by(
-                    dbschema.AwsCredentialStorage.created_at.desc()):
+            for row in db_id.credentials:
                 yield CredentialInfo(
                     access_key=row.aws_access_key_id,
                     created_at=row.created_at)
