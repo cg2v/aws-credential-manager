@@ -12,7 +12,7 @@ class CredentialType(Enum):
 @runtime_checkable
 class IdentityHandle(Protocol):
     @property
-    def account_id(self) -> str:
+    def aws_account_id(self) -> str:
         ...
     @property
     def arn(self) -> str:
@@ -31,7 +31,7 @@ class IdentityHandle(Protocol):
 @dataclass(frozen=True)
 class IdentityKey:
     cred_type: CredentialType
-    account_id: str
+    aws_account_id: str
     name: str
 
 class MultiCredError(Exception):

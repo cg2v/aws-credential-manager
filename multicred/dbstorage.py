@@ -20,7 +20,7 @@ class DBStorageIdentityHandle:
     def __init__(self, data: dbschema.AwsIdentityStorage):
         self.data = data
     @property
-    def account_id(self) -> str:
+    def aws_account_id(self) -> str:
         account : dbschema.AwsAccountStorage = self.data.aws_account
         return account.account_id
     @property

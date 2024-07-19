@@ -107,7 +107,7 @@ def do_stats(iolayer: Storage):
 def do_list_ids(iolayer: Storage):
     for identity in iolayer.list_identities():
         print(f'ARN: {identity.arn}')
-        print(f'Account: {identity.account_id}')
+        print(f'Account: {identity.aws_account_id}')
         print(f'Short Identifier: {identity.name}')
         print()
 

@@ -55,10 +55,6 @@ class AwsIdentity:
         return self.aws_identity
 
     @property
-    def account_id(self) -> str:
-        return self.aws_account_id
-
-    @property
     def name(self) -> str:
         if len(self._resource_components) == 2 or (
                 len(self._resource_components) == 3 and self.cred_type == CredentialType.ROLE
