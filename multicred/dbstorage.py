@@ -121,13 +121,22 @@ class DBStorage:
                 session.rollback()
                 raise DBStorageError('Failed to import credentials') from e
 
-    def _get_identity_by_arn(self, session: Session, arn: str) -> IdentityHandle | None:
+    def _get_identity_by_key(self, session: Session, key: credentials.IdentityKey) -> IdentityHandle | None:
         try:
+            account = session.query(dbschema.AwsAccountStorage).filter_by(
+                account_id=key.aws_account_id).one()
             stored_id = session.query(dbschema.AwsIdentityStorage).filter_by(
-                arn=arn).one()
+                aws_account=account, cred_type=key.cred_type.value, name=key.name).one()
         except NoResultFound:
             return None
         return DBStorageIdentityHandle(stored_id)
+    
+    def _get_identity_by_arn(self, session: Session, arn: str) -> IdentityHandle | None:
+        try:
+            key = parse_principal(arn)
+        except ValueError:
+            return None
+        return self._get_identity_by_key(session, key)
 
     def get_identity_by_arn(self, arn: str) -> IdentityHandle | None:
         with self.session() as session:
@@ -172,14 +181,11 @@ class DBStorage:
 
     def _get_identity_by_account_and_role_name(self, session: Session, account_id: str,
                                                role_name: str) -> IdentityHandle | None:
-        try:
-            account = session.query(dbschema.AwsAccountStorage).filter_by(
-                account_id=account_id).one()
-            stored_id = session.query(dbschema.AwsIdentityStorage).filter_by(
-                aws_account_id=account.id, name=role_name).one()
-        except NoResultFound:
-            return None
-        return DBStorageIdentityHandle(stored_id)
+        key = credentials.IdentityKey(
+            cred_type=credentials.CredentialType.ROLE,
+            aws_account_id=account_id,
+            name=role_name)
+        return self._get_identity_by_key(session, key)
 
     def get_identity_by_account_and_role_name(self, account_id: str, role_name: str) -> IdentityHandle | None:
         with self.session() as session:
