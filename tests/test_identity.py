@@ -16,6 +16,11 @@ def testaws_identity_protocol(role_identity, test_identity_handle):
     assert role_identity.cred_type == CredentialType.ROLE
     assert role_identity.name == 'test_role'
     assert role_identity == 'arn:aws:sts::123456789012:assumed-role/test_role/test_session'
+    assert role_identity == 'arn:aws:iam::123456789012:role/test_role'
+    assert role_identity == 'arn:aws:iam::123456789012:role/with_path/test_role'
+    assert role_identity != 'arn:aws:iam::123456789012:user/test_role'
+    assert role_identity != 'arn:aws:iam::123456789012:role/test_role/test_session'
+    assert role_identity != 'invalid_arn'
     assert isinstance(test_identity_handle, IdentityHandle)
     assert role_identity == test_identity_handle
 
