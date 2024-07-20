@@ -8,6 +8,7 @@ from . import dbschema
 from . import credentials
 from .base_objects import MultiCredStorageError, MultiCredLinkError, MultiCredBadRequest
 from .interfaces import IdentityHandle, Statistics, CredentialInfo
+from .utils import parse_principal
 
 class DBStorageError(MultiCredStorageError):
     pass
@@ -17,27 +18,36 @@ class MissingIdentityError(DBStorageError):
 
 class DBStorageIdentityHandle:
     data: dbschema.AwsIdentityStorage
+    _key: credentials.IdentityKey
     def __init__(self, data: dbschema.AwsIdentityStorage):
         self.data = data
+        account : dbschema.AwsAccountStorage = self.data.aws_account
+        self._key = credentials.IdentityKey(
+            cred_type=credentials.CredentialType(data.cred_type),
+            aws_account_id=account.account_id,
+            name=data.name)
     @property
     def aws_account_id(self) -> str:
-        account : dbschema.AwsAccountStorage = self.data.aws_account
-        return account.account_id
+        return self._key.aws_account_id
     @property
     def arn(self) -> str:
         return self.data.arn
     @property
     def cred_type(self) -> credentials.CredentialType:
-        return credentials.CredentialType(self.data.cred_type)
+        return self._key.cred_type
     @property
     def name(self) -> str:
-        return self.data.name
+        return self._key.name
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, IdentityHandle):
             return False
-        return self.arn == other.arn
+        try:
+            other_key = parse_principal(other.arn)
+        except ValueError:
+            return False
+        return self._key == other_key
     def __hash__(self) -> int:
-        return hash(self.arn)
+        return hash(self._key)
 
 class DBStorage:
     engine: Engine
