@@ -40,7 +40,9 @@ class AwsIdentityStorage(Base):
     userid : Mapped[str] = mapped_column(String(20), nullable=True)
     cred_type : Mapped[str] = mapped_column(String(20), nullable=False)
     name : Mapped[str] = mapped_column(String(100), nullable=False)
-    credentials = relationship('AwsCredentialStorage', back_populates='aws_identity')
+    credentials = relationship('AwsCredentialStorage', back_populates='aws_identity',
+                               order_by='desc(AwsCredentialStorage.created_at)',
+                               cascade='all, delete-orphan')
     source_identity = relationship(
         'AwsRoleIdentitySourceStorage', back_populates='target_aws_identity',
         foreign_keys=[AwsRoleIdentitySourceStorage.target_aws_identity_id])
