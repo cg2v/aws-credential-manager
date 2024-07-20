@@ -27,7 +27,7 @@ def user_identity():
 @dataclass(frozen=True)
 class TestIdentityHandle:
     @property
-    def account_id(self) -> str:
+    def aws_account_id(self) -> str:
         return '123456789012'
     @property
     def arn(self) -> str:

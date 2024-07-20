@@ -33,7 +33,18 @@ def test_role_storage_get_key(role_creds_storage):
 def test_find_identity_by_arn(role_creds_storage):
     stored_id = role_creds_storage.test_object.get_identity_by_arn(
         'arn:aws:sts::123456789012:assumed-role/test_role/test_session')
+    assert stored_id
     assert stored_id.arn == 'arn:aws:sts::123456789012:assumed-role/test_role/test_session'
+    assert stored_id == role_creds_storage.credentials.test_object.aws_identity
+    stored_id_2 = role_creds_storage.test_object.get_identity_by_arn(
+        'arn:aws:iam::123456789012:role/test_role')
+    assert stored_id_2
+    assert stored_id_2.aws_account_id == '123456789012'
+    assert stored_id_2.cred_type.value == 'role'
+    assert stored_id_2.name == 'test_role'
+    assert stored_id == stored_id_2
+    null_id = role_creds_storage.test_object.get_identity_by_arn('invalid_arn')
+    assert null_id is None
 
 def test_find_identity_by_account_and_role_name(role_creds_storage):
     stored_id = role_creds_storage.test_object.get_identity_by_account_and_role_name(
@@ -185,34 +196,34 @@ def test_list_identities_role(role_creds_storage):
     identities = list(role_creds_storage.test_object.list_identities())
     assert len(identities) == 1
     assert identities[0].arn == 'arn:aws:sts::123456789012:assumed-role/test_role/test_session'
-    assert identities[0].account_id == '123456789012'
+    assert identities[0].aws_account_id == '123456789012'
     assert identities[0].name == 'test_role'
 
 def test_list_identities_user(user_creds_storage):
     identities = list(user_creds_storage.test_object.list_identities())
     assert len(identities) == 1
     assert identities[0].arn == 'arn:aws:iam::123456789012:user/test_user'
-    assert identities[0].account_id == '123456789012'
+    assert identities[0].aws_account_id == '123456789012'
     assert identities[0].name == 'test_user'
 
 def test_list_identities_multiple(multiple_creds_storage):
     identities = list(multiple_creds_storage.test_object.list_identities())
     assert len(identities) == 2
     assert identities[0].arn == 'arn:aws:sts::123456789012:assumed-role/test_role/test_session'
-    assert identities[0].account_id == '123456789012'
+    assert identities[0].aws_account_id == '123456789012'
     assert identities[0].name == 'test_role'
     assert identities[1].arn == 'arn:aws:iam::123456789012:user/test_user'
-    assert identities[1].account_id == '123456789012'
+    assert identities[1].aws_account_id == '123456789012'
     assert identities[1].name == 'test_user'
 
 def test_list_identities_derived(derived_creds_storage):
     identities = list(derived_creds_storage.test_object.list_identities())
     assert len(identities) == 2
     assert identities[0].arn == 'arn:aws:sts::123456789012:assumed-role/test_role/test_session'
-    assert identities[0].account_id == '123456789012'
+    assert identities[0].aws_account_id == '123456789012'
     assert identities[0].name == 'test_role'
     assert identities[1].arn == 'arn:aws:iam::123456789012:user/test_user'
-    assert identities[1].account_id == '123456789012'
+    assert identities[1].aws_account_id == '123456789012'
     assert identities[1].name == 'test_user'
 
 def test_list_identity_credentials_empty(empty_storage):

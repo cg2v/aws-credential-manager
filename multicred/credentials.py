@@ -6,7 +6,9 @@ from configparser import ConfigParser
 import botocore.exceptions
 from boto3 import session
 
-from .base_objects import IdentityHandle, CredentialType, MultiCredError
+from .base_objects import IdentityKey, IdentityHandle, CredentialType, \
+    MultiCredError
+from .utils import parse_principal
 
 if TYPE_CHECKING:
     from mypy_boto3_sts.type_defs import GetCallerIdentityResponseTypeDef
@@ -27,26 +29,25 @@ class BadIdentityError(MultiCredError, ValueError):
 
 @dataclass(frozen=True, eq=False)
 class AwsIdentity:
-    aws_identity: str = field(repr=False)
+    aws_identity: str = field(repr=False, compare=False)
     aws_userid : str
     _arn_components: list[str] = field(init=False, repr=False, compare=False)
     _resource_components: list[str] = field(
         init=False, repr=False, compare=False)
-    aws_account_id: str = field(init=False, compare=False)
-    cred_type: CredentialType = field(init=False, compare=False)
+    _key: IdentityKey = field(init=False)
     cred_path: str = field(init=False, compare=False)
 
     def __post_init__(self):
         if not self.aws_identity.startswith('arn:aws:'):
             raise BadIdentityError('Invalid AWS identity')
+        object.__setattr__(self, '_key',
+                           parse_principal(self.aws_identity))
         elements = self.aws_identity.split(':')
         if len(elements) != 6:
             raise BadIdentityError('Invalid AWS identity')
         object.__setattr__(self, '_arn_components',  elements[4:])
         object.__setattr__(self, '_resource_components',
                            elements[5].split('/'))
-        object.__setattr__(self, 'aws_account_id', elements[4])
-        object.__setattr__(self, 'cred_type', CredentialType[self._resource_components[0].upper().replace('-', '_')])
         object.__setattr__(self, 'cred_path',
                            '/'.join(self._resource_components[1:]))
 
@@ -55,29 +56,40 @@ class AwsIdentity:
         return self.aws_identity
 
     @property
-    def account_id(self) -> str:
-        return self.aws_account_id
+    def aws_account_id(self) -> str:
+        return self._key.aws_account_id
+
+    @property
+    def cred_type(self) -> CredentialType:
+        return self._key.cred_type
 
     @property
     def name(self) -> str:
-        if len(self._resource_components) == 2 or (
-                len(self._resource_components) == 3 and self.cred_type == CredentialType.ROLE
-        ):
-            return self._resource_components[1]
-        raise WrongIdentityTypeError('This identity does not have a simple name')
+        return self._key.name
+
+    @property
+    def key(self) -> IdentityKey:
+        return self._key
 
     def __eq__(self, other: object) -> bool:
         if isinstance(other, AwsIdentity):
-            return self.aws_identity == other.aws_identity and \
+            return self._key == other._key and \
                 self.aws_userid == other.aws_userid
-        if isinstance(other, str):
-            return self.aws_identity == other
+        arn = None
         if isinstance(other, IdentityHandle):
-            return self.aws_identity == other.arn
-        return False
+            arn = other.arn
+        elif isinstance(other, str):
+            arn = other
+        if arn is None:
+            return False
+        try:
+            key = parse_principal(arn)
+        except ValueError:
+            return False
+        return self._key == key
 
     def __hash__(self) -> int:
-        return hash(self.aws_identity)
+        return hash(self._key)
 
 @dataclass(frozen=True, eq=False)
 class AwsRoleIdentity(AwsIdentity):

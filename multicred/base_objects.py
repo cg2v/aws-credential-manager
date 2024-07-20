@@ -1,5 +1,6 @@
 from typing import Protocol, runtime_checkable
 from enum import Enum
+from dataclasses import dataclass
 
 class CredentialType(Enum):
     """Enum to represent the type of AWS credentials."""
@@ -11,7 +12,7 @@ class CredentialType(Enum):
 @runtime_checkable
 class IdentityHandle(Protocol):
     @property
-    def account_id(self) -> str:
+    def aws_account_id(self) -> str:
         ...
     @property
     def arn(self) -> str:
@@ -26,6 +27,12 @@ class IdentityHandle(Protocol):
         ...
     def __hash__(self) -> int:
         ...
+
+@dataclass(frozen=True)
+class IdentityKey:
+    cred_type: CredentialType
+    aws_account_id: str
+    name: str
 
 class MultiCredError(Exception):
     """Base class for all exceptions in multicred"""
