@@ -33,7 +33,18 @@ def test_role_storage_get_key(role_creds_storage):
 def test_find_identity_by_arn(role_creds_storage):
     stored_id = role_creds_storage.test_object.get_identity_by_arn(
         'arn:aws:sts::123456789012:assumed-role/test_role/test_session')
+    assert stored_id
     assert stored_id.arn == 'arn:aws:sts::123456789012:assumed-role/test_role/test_session'
+    assert stored_id == role_creds_storage.credentials.test_object.aws_identity
+    stored_id_2 = role_creds_storage.test_object.get_identity_by_arn(
+        'arn:aws:iam::123456789012:role/test_role')
+    assert stored_id_2
+    assert stored_id_2.aws_account_id == '123456789012'
+    assert stored_id_2.cred_type.value == 'role'
+    assert stored_id_2.name == 'test_role'
+    assert stored_id == stored_id_2
+    null_id = role_creds_storage.test_object.get_identity_by_arn('invalid_arn')
+    assert null_id is None
 
 def test_find_identity_by_account_and_role_name(role_creds_storage):
     stored_id = role_creds_storage.test_object.get_identity_by_account_and_role_name(
