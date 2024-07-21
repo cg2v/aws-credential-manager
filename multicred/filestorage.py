@@ -54,7 +54,7 @@ class FileStorage:
 
     def _get_path_from_identity(self, identity: IdentityHandle) -> Path:
         return self._root.joinpath("account_identities",
-                                   str(identity.account_id),
+                                   str(identity.aws_account_id),
                                    identity.cred_type.value,
                                    identity.name)
 
