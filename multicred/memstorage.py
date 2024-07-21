@@ -19,13 +19,11 @@ class MemStorageAccountData:
     identities: list[MemStorageIdentityData]
 
 class MemStorage:
-    accounts: dict[int, MemStorageAccountData]
+    accounts: set[str]
     identities: dict[IdentityKey, MemStorageIdentityData]
-    id_lookup: dict[Tuple[int, credentials.CredentialType, str], str]
     def __init__(self):
-        self.accounts = {}
+        self.accounts = set()
         self.identities = {}
-        self.id_lookup = {}
     def _get_identity(self, handle: IdentityHandle) -> MemStorageIdentityData | None:
         key = IdentityKey(handle.cred_type, handle.aws_account_id, handle.name)
         return self.identities.get(key, None)
@@ -85,25 +83,13 @@ class MemStorage:
         if not creds.is_valid:
             raise MultiCredBadRequest('Invalid credentials cannot be imported')
         identity = creds.aws_identity
-        account_id = int(identity.aws_account_id)
-        if account_id not in self.accounts:
-            self.accounts[account_id] = MemStorageAccountData(
-                account_id=account_id,
-                identities=[]
-            )
+        self.accounts.add(identity.aws_account_id)
         key = IdentityKey(identity.cred_type, identity.aws_account_id, identity.name)
         if key not in self.identities:
             new_identity = MemStorageIdentityData(
                 identity=identity
             )
             self.identities[key] = new_identity
-            for search_identity in self.accounts[account_id].identities:
-                if search_identity == new_identity:
-                    break
-            else:
-                self.accounts[account_id].identities.append(new_identity)
-            id_key = (account_id, identity.cred_type, identity.name)
-            self.id_lookup[id_key] = identity.aws_identity
         target_id = self.identities[key]
         target_id.my_creds.append(creds)
     def get_identity_credentials(self, identity: IdentityHandle) \
