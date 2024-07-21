@@ -1,4 +1,6 @@
+import configparser
 from multicred.base_objects import IdentityHandle, CredentialType
+from multicred.credentials import get_identity
 
 def test_aws_role_identity(role_identity):
     assert role_identity.aws_identity == 'arn:aws:sts::123456789012:assumed-role/test_role/test_session'
@@ -8,6 +10,25 @@ def test_aws_role_identity(role_identity):
     assert role_identity.aws_account_id == '123456789012'
     assert role_identity.aws_role_name == 'test_role'
 
+def test_aws_role_identity_export(role_identity):
+    config = role_identity.put()
+    assert "identity" in config
+    assert config.get("identity", "arn") == 'arn:aws:sts::123456789012:assumed-role/test_role/test_session'
+    assert config.get("identity", "userid") ==  'AROAEXAMPLE'
+    assert config.get("identity", "cred_type") == 'role'
+
+def test_aws_role_identity_import(role_identity):
+    data = (
+        '[identity]',
+        'arn = arn:aws:sts::123456789012:assumed-role/test_role/test_session',
+        'userid = AROAEXAMPLE',
+        'cred_type = role',
+        'role_session_name = test_session'
+    )
+    config = configparser.ConfigParser()
+    config.read_file(data)
+    imported_id = get_identity(config)
+    assert imported_id == role_identity
 
 def testaws_identity_protocol(role_identity, test_identity_handle):
     assert isinstance(role_identity, IdentityHandle)
@@ -44,4 +65,22 @@ def test_aws_user_identity_repr(user_identity):
             "_key=IdentityKey(cred_type=<CredentialType.USER: 'user'>, "\
             "aws_account_id='123456789012', name='test_user'), " \
             "cred_path='test_user', aws_user_name='test_user')"
-    
+
+def test_aws_user_identity_export(user_identity):
+    config = user_identity.put()
+    assert "identity" in config
+    assert config.get("identity", "arn") == 'arn:aws:iam::123456789012:user/test_user'
+    assert config.get("identity", "userid") ==  'AIDEXAMPLE'
+    assert config.get("identity", "cred_type") == 'user'
+
+def test_aws_user_identity_import(user_identity):
+    data = (
+        '[identity]',
+        'arn = arn:aws:iam::123456789012:user/test_user',
+        'userid = AIDEXAMPLE',
+        'cred_type = user'
+    )
+    config = configparser.ConfigParser()
+    config.read_file(data)
+    imported_id = get_identity(config)
+    assert imported_id == user_identity
