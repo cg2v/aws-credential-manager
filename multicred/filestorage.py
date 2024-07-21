@@ -5,8 +5,10 @@ from datetime import datetime
 from configparser import ConfigParser
 
 from . import credentials
-from .base_objects import IdentityHandle, MultiCredError, MultiCredBadRequest, MultiCredLinkError
+from .base_objects import IdentityKey, IdentityHandle, MultiCredError,\
+      MultiCredBadRequest, MultiCredLinkError
 from .interfaces import Statistics, CredentialInfo
+from .utils import parse_principal
 
 class FileStorageError(MultiCredError):
     pass
@@ -52,7 +54,7 @@ class FileStorage:
             return credentials.AwsRoleIdentity(arn, userid, role_session_name)
         return credentials.AwsIdentity(arn, userid)
 
-    def _get_path_from_identity(self, identity: IdentityHandle) -> Path:
+    def _get_path_from_identity(self, identity: IdentityKey|IdentityHandle) -> Path:
         return self._root.joinpath("account_identities",
                                    str(identity.aws_account_id),
                                    identity.cred_type.value,
@@ -88,21 +90,24 @@ class FileStorage:
             arn_link_path.symlink_to(link_target_path)
         return id_path
     def get_identity_by_arn(self, arn: str) -> IdentityHandle | None:
-        arnpath = self._root.joinpath(
-            "identity_arns", arn.replace(":", "_").replace("/", "_"))
-        if not arnpath.exists():
+        try:
+            identity = parse_principal(arn)
+        except ValueError:
             return None
-        return self._get_handle_from_path(arnpath)
+        path = self._get_path_from_identity(identity)
+        if not path.exists():
+            return None
+        return self._get_handle_from_path(path)
 
     def get_identity_by_account_and_role_name(self, account_id: str, role_name: str) \
         -> IdentityHandle | None:
-        accountpath = self._root.joinpath("account_identities", account_id)
-        if not accountpath.exists():
+        identity = IdentityKey(aws_account_id=account_id,
+                               cred_type=credentials.CredentialType.ROLE,
+                               name=role_name)
+        path = self._get_path_from_identity(identity)
+        if not path.exists():
             return None
-        rolepath = accountpath.joinpath("role", role_name)
-        if not rolepath.exists():
-            return None
-        return self._get_handle_from_path(rolepath)
+        return self._get_handle_from_path(path)
 
     def get_parent_identity(self, identity: IdentityHandle):
         if identity.cred_type != credentials.CredentialType.ROLE:
