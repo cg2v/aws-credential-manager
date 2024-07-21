@@ -1,8 +1,10 @@
 from typing import Tuple
 from dataclasses import dataclass, field
+import warnings
 
 from . import credentials
-from .base_objects import IdentityHandle, MultiCredLinkError, MultiCredBadRequest
+from .base_objects import IdentityKey, IdentityHandle, MultiCredLinkError, MultiCredBadRequest
+from .utils import parse_principal
 
 
 @dataclass
@@ -18,43 +20,50 @@ class MemStorageAccountData:
 
 class MemStorage:
     accounts: dict[int, MemStorageAccountData]
-    identities: dict[str, MemStorageIdentityData]
+    identities: dict[IdentityKey, MemStorageIdentityData]
     id_lookup: dict[Tuple[int, credentials.CredentialType, str], str]
     def __init__(self):
         self.accounts = {}
         self.identities = {}
         self.id_lookup = {}
+    def _get_identity(self, handle: IdentityHandle) -> MemStorageIdentityData | None:
+        key = IdentityKey(handle.cred_type, handle.aws_account_id, handle.name)
+        return self.identities.get(key, None)
     def get_identity_by_arn(self, arn: str) -> IdentityHandle | None:
-        data = self.identities.get(arn, None)
+        try:
+            key = parse_principal(arn)
+        except ValueError:
+            return None
+        data = self.identities.get(key, None)
         if data is None:
             return None
         return data.identity
     def get_identity_by_account_and_role_name(self, account_id: str, role_name: str) \
         -> IdentityHandle | None:
-        account = self.accounts.get(int(account_id), None)
-        if account is None:
+        key = IdentityKey(credentials.CredentialType.ROLE, account_id, role_name)
+        identity = self.identities.get(key, None)
+        if identity is None:
             return None
-        for identity in account.identities:
-            if isinstance(identity.identity, credentials.AwsRoleIdentity) and \
-                identity.identity.aws_role_name == role_name:
-                return identity.identity
-        return None
+        return identity.identity
     def get_parent_identity(self, identity: IdentityHandle) \
         -> Tuple[IdentityHandle, str] | tuple[None, None]:
-        data = self.identities.get(identity.arn, None)
+        data = self._get_identity(identity)
         if data is None:
             return None, None
         if data.parent_identity is None:
             return None, None
         assert data.role_arn is not None
-        parent = self.identities[data.parent_identity.arn]
+        parent = self._get_identity(data.parent_identity)
+        if parent is None:
+            warnings.warn('Linked parent identity was not found')
+            return None, None
         return parent.identity, data.role_arn
     def construct_identity_relationship(self, creds: credentials.Credentials,
                                   parent_creds: credentials.Credentials,
                                   role_arn: str) \
                                     -> None:
-        target = self.identities.get(creds.aws_identity.aws_identity)
-        new_parent = self.identities.get(parent_creds.aws_identity.aws_identity)
+        target = self._get_identity(creds.aws_identity)
+        new_parent = self._get_identity(parent_creds.aws_identity)
         if target is None or new_parent is None:
             raise MultiCredLinkError('Identity not found')
         if target.parent_identity is not None:
@@ -63,11 +72,11 @@ class MemStorage:
         target.role_arn = role_arn
 
     def remove_identity_relationship(self, identity: IdentityHandle) -> None:
-        target = self.identities.get(identity.arn)
+        target = self._get_identity(identity)
         assert target is not None
         for search_identity in self.identities.values():
             if search_identity.parent_identity is not None and \
-                search_identity.parent_identity.arn == identity.arn:
+                search_identity.parent_identity == identity:
                 raise MultiCredLinkError('Identity is a parent')
         target.parent_identity = None
         target.role_arn = None
@@ -82,11 +91,12 @@ class MemStorage:
                 account_id=account_id,
                 identities=[]
             )
-        if identity.aws_identity not in self.identities:
+        key = IdentityKey(identity.cred_type, identity.aws_account_id, identity.name)
+        if key not in self.identities:
             new_identity = MemStorageIdentityData(
                 identity=identity
             )
-            self.identities[creds.aws_identity.aws_identity] = new_identity
+            self.identities[key] = new_identity
             for search_identity in self.accounts[account_id].identities:
                 if search_identity == new_identity:
                     break
@@ -94,10 +104,11 @@ class MemStorage:
                 self.accounts[account_id].identities.append(new_identity)
             id_key = (account_id, identity.cred_type, identity.name)
             self.id_lookup[id_key] = identity.aws_identity
-        self.identities[creds.aws_identity.aws_identity].my_creds.append(creds)
+        target_id = self.identities[key]
+        target_id.my_creds.append(creds)
     def get_identity_credentials(self, identity: IdentityHandle) \
         -> credentials.Credentials | None:
-        data = self.identities.get(identity.arn)
+        data = self._get_identity(identity)
         if data is None:
             return None
         if not data.my_creds:
@@ -107,7 +118,7 @@ class MemStorage:
         for identity in self.identities.values():
             identity.my_creds = [c for c in identity.my_creds if c.aws_access_key_id != access_key]
     def purge_identity_credentials(self, identity: IdentityHandle) -> None:
-        data = self.identities.get(identity.arn)
+        data = self._get_identity(identity)
         if data is None:
             return
         data.my_creds = []
