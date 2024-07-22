@@ -9,6 +9,7 @@ from multicred.credentials  import CredentialType, Credentials, AwsRoleIdentity,
 from multicred.dbstorage import DBStorage
 from multicred.memstorage import MemStorage
 from multicred.filestorage import FileStorage
+from multicred.redis import RedisStorage
 from multicred.resolver import StorageBasedResolver
 from multicred.interfaces import Storage, Resolver
 
@@ -122,10 +123,14 @@ def get_dbstorage(tmp_path):
 def get_filestorage(tmp_path):
     return FileStorage(tmp_path)
 
-@fixture(params=[get_dbstorage, get_memstorage, get_filestorage])
+def get_redisstorage(tmp_path):
+    rv = RedisStorage('redis://localhost:6379/0', reset=True)
+    return rv
+
+@fixture(params=[get_dbstorage, get_memstorage, get_filestorage, get_redisstorage])
 def storage(request, tmp_path) -> Storage:
     rv = request.param(tmp_path)
-    assert isinstance(rv, (DBStorage, MemStorage, FileStorage))
+    assert isinstance(rv, (DBStorage, MemStorage, FileStorage, RedisStorage))
     return rv
 
 @fixture
