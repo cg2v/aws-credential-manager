@@ -9,3 +9,4 @@ six==1.16.0
 SQLAlchemy==2.0.40
 typing_extensions==4.13.2
 urllib3==2.6.3
+redis==5.0.7

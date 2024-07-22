@@ -25,11 +25,17 @@ pytest_mock==3.14.1
 python-dateutil==2.9.0.post0
 PyYAML==6.0.2
 requests==2.32.5
+redis==5.0.7
 responses==0.25.7
 s3transfer==0.14.0
 six==1.16.0
 SQLAlchemy==2.0.40
 types-awscrt==0.20.9
+types-cffi==1.16.0.20240331
+types-pyOpenSSL==24.1.0.20240722
+types-redis==4.6.0.20240425
+types-s3transfer==0.10.1
+types-setuptools==71.0.0.20240722
 typing_extensions==4.13.2
 urllib3==2.6.3
 Werkzeug==3.1.3
