@@ -47,12 +47,7 @@ class FileStorage:
 
     def _get_handle_from_path(self, path: Path) -> IdentityHandle:
         config = self._get_idini(path)
-        arn = config.get("identity", "arn")
-        role_session_name = config.get("identity", "role_session_name", fallback=None)
-        userid = config.get("identity", "userid")
-        if role_session_name:
-            return credentials.AwsRoleIdentity(arn, userid, role_session_name)
-        return credentials.AwsIdentity(arn, userid)
+        return credentials.get_identity(config)
 
     def _get_path_from_identity(self, identity: IdentityKey|IdentityHandle) -> Path:
         return self._root.joinpath("account_identities",
@@ -68,15 +63,7 @@ class FileStorage:
             raise FileStorageError(f"Identity path {id_path} is not a directory")
         inifile = id_path.joinpath("identity.ini")
         if not inifile.exists():
-            config = ConfigParser()
-            config.add_section("identity")
-            config.set("identity", "arn", creds.aws_identity.aws_identity)
-            config.set("identity", "userid", creds.aws_identity.aws_userid)
-            config.set("identity", "cred_type", creds.aws_identity.cred_type.value)
-            if creds.aws_identity.cred_type == credentials.CredentialType.ROLE:
-                assert isinstance(creds.aws_identity, credentials.AwsRoleIdentity)
-                config.set("identity", "role_session_name",
-                            creds.aws_identity.aws_role_session_name)
+            config = creds.aws_identity.put()
             with inifile.open("w", encoding="ASCII") as file:
                 config.write(file)
         arndir = self._root.joinpath("identity_arns")
@@ -180,12 +167,7 @@ class FileStorage:
         if cred_path.exists():
             raise MultiCredBadRequest("Credentials already exist")
         with cred_path.open("w", encoding="ASCII") as file:
-            config = ConfigParser()
-            config.add_section("credentials")
-            config.set("credentials", "aws_access_key_id", creds.aws_access_key_id)
-            config.set("credentials", "aws_secret_access_key", creds.aws_secret_access_key)
-            if creds.aws_session_token:
-                config.set("credentials", "aws_session_token", creds.aws_session_token)
+            config = creds.put()
             if creds.aws_identity.cred_type == credentials.CredentialType.ROLE:
                 config.set("credentials", "x_role_arn", creds.aws_identity.aws_identity)
                 assert isinstance(creds.aws_identity, credentials.AwsRoleIdentity)
@@ -218,17 +200,8 @@ class FileStorage:
         cred_path = cred_link.resolve()
         config = ConfigParser()
         config.read(cred_path)
-        rv = credentials.Credentials(
-            aws_access_key_id=config.get("credentials", "aws_access_key_id"),
-            aws_secret_access_key=config.get("credentials", "aws_secret_access_key"),
-            aws_session_token=config.get("credentials", "aws_session_token", fallback=None),
-        )
-        if not rv.is_valid:
-            rv.aws_identity = credentials.AwsIdentity(
-                aws_identity=identity.arn,
-                aws_userid=identity.name
-            )
-        return rv
+        return credentials.Credentials.from_shared_credentials_file(cred_path,
+                                                                    profile_name="credentials")
 
     def get_credentials_by_key(self, access_key: str) -> credentials.Credentials | None:
         allcreds_path = self._root.joinpath("all_credentials")
@@ -239,13 +212,8 @@ class FileStorage:
         cred_path = allcreds_path.joinpath(access_key)
         if not cred_path.is_file() or not cred_path.exists():
             return None
-        config = ConfigParser()
-        config.read(cred_path)
-        return credentials.Credentials(
-            aws_access_key_id=config.get("credentials", "aws_access_key_id"),
-            aws_secret_access_key=config.get("credentials", "aws_secret_access_key"),
-            aws_session_token=config.get("credentials", "aws_session_token", fallback=None)
-        )
+        return credentials.Credentials.from_shared_credentials_file(cred_path, 
+                                                                    profile_name="credentials")
 
     def delete_credentials_by_key(self, access_key: str) -> None:
         allcreds_path = self._root.joinpath("all_credentials")
