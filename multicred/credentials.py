@@ -2,7 +2,8 @@
 from typing import TYPE_CHECKING
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from configparser import ConfigParser
+from configparser import ConfigParser, Error as ConfigParserError
+import os
 import botocore.exceptions
 from boto3 import session
 
@@ -70,6 +71,14 @@ class AwsIdentity:
     @property
     def key(self) -> IdentityKey:
         return self._key
+    
+    def put(self) -> ConfigParser:
+        rv = ConfigParser()
+        rv.add_section("identity")
+        rv.set("identity", "arn", self.aws_identity)
+        rv.set("identity", "userid", self.aws_userid)
+        rv.set("identity", "cred_type", self.cred_type.value)
+        return rv
 
     def __eq__(self, other: object) -> bool:
         if isinstance(other, AwsIdentity):
@@ -113,6 +122,11 @@ class AwsRoleIdentity(AwsIdentity):
         aws_role_session_name = userid.split(':')[1]
 
         return cls(aws_identity=aws_identity, aws_userid=aws_role_id, aws_role_session_name=aws_role_session_name)
+
+    def put(self) -> ConfigParser:
+        rv = super().put()
+        rv.set("identity", "role_session_name", self.aws_role_session_name)
+        return rv
 
     def __eq__(self, other: object) -> bool:
         if isinstance(other, AwsRoleIdentity):
@@ -166,10 +180,26 @@ def to_role_identity(aws_identity: AwsIdentity) -> AwsRoleIdentity:
 def import_identity(identity: 'GetCallerIdentityResponseTypeDef') -> AwsIdentity:
     """Factory function to create an AwsIdentity object from a boto3 GetCallerIdentity response."""
     aws_identity = identity['Arn']
-    arn_components = aws_identity.split(':')
-    if arn_components[5].startswith('assumed-role'):
+    try:
+        principal = parse_principal(aws_identity)
+    except ValueError as e:
+        raise BadIdentityError('Invalid AWS identity') from e
+    if principal.cred_type == CredentialType.ROLE:
         return AwsRoleIdentity.from_caller_identity(identity)
     return AwsUserIdentity.from_caller_identity(identity)
+
+def get_identity(config: ConfigParser) -> AwsIdentity:
+    """Function to create an AwsIdentity object from a configparser.ConfigParser object."""
+    try:
+        arn = config.get("identity", "arn")
+        cred_type = CredentialType(config.get("identity", "cred_type"))
+        userid = config.get("identity", "userid")
+        if cred_type == CredentialType.ROLE:
+            role_session_name = config.get("identity", "role_session_name")
+            return AwsRoleIdentity(arn, userid, role_session_name)
+        return AwsIdentity(arn, userid)
+    except (LookupError, ConfigParserError) as e:
+        raise MissingCredentialsError('Missing identity data') from e
 
 UNKNOWN_IDENTITY = AwsUnknownIdentity(aws_identity='arn:aws:::UNKNOWN:unknown',
                                       aws_userid='UNKNOWN')
@@ -208,10 +238,19 @@ class Credentials:
             'aws_session_token': self.aws_session_token,
         }
 
+    def put(self) -> ConfigParser:
+        rv = ConfigParser()
+        rv.add_section("credentials")
+        rv.set("credentials", "aws_access_key_id", self.aws_access_key_id)
+        rv.set("credentials", "aws_secret_access_key", self.aws_secret_access_key)
+        if self.aws_session_token is not None:
+            rv.set("credentials", "aws_session_token", self.aws_session_token)
+        return rv
+
     @classmethod
-    def from_shared_credentials_file(cls, shared_credentials_file: str | Iterable[str], profile_name='default',):
+    def from_shared_credentials_file(cls, shared_credentials_file: os.PathLike | str | Iterable[str], profile_name='default',):
         config = ConfigParser()
-        if isinstance(shared_credentials_file, str):
+        if isinstance(shared_credentials_file, (os.PathLike, str)):
             config.read(shared_credentials_file)
         else:
             config.read_file(shared_credentials_file)
