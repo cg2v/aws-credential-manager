@@ -8,4 +8,4 @@ s3transfer==0.10.2
 six==1.16.0
 SQLAlchemy==2.0.34
 typing_extensions==4.12.2
-urllib3==2.2.2
+urllib3==2.2.3
