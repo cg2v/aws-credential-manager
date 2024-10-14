@@ -5,7 +5,7 @@ botocore-stubs==1.35.1
 certifi==2024.8.30
 cffi==1.17.0
 chardet==5.2.0
-charset-normalizer==3.3.2
+charset-normalizer==3.4.0
 colorama==0.4.6
 cryptography==42.0.7
 greenlet==3.1.1
