@@ -15,7 +15,7 @@ Jinja2==3.1.4
 jmespath==1.0.1
 MarkupSafe==3.0.2
 moto==5.0.7
-mypy-boto3-sts==1.34.0
+mypy-boto3-sts==1.36.0
 mypy_boto3_iam==1.34.83
 packaging==24.0
 pluggy==1.5.0
