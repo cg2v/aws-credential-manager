@@ -41,7 +41,7 @@ def main():
     if creds is None:
         print('No credentials found', file=sys.stderr)
         sys.exit(1)
-    if args.bash or args.csh:
+    if args.shell or args.csh:
         if args.csh:
             fmtenv='setenv {0} {1}'
         else:
