@@ -16,6 +16,11 @@ def main():
     fetchgroup.add_argument('--account', help='Account number to fetch credentials for')
     parser.add_argument('--role', help='Role name to fetch credentials for')
     parser.add_argument('--debug', help='Enable debug logging', action='store_true')
+    shellgroup = parser.add_mutually_exclusive_group(required=False)
+    shellgroup.add_argument('--shell', '--bash', help='Output bash variables instead of JSON',
+            default=False, action='store_true')
+    shellgroup.add_argument('--csh', help='Output CSH variables instead of JSON',
+            default=False, action='store_true')
     args = parser.parse_args()
 
     if args.account is not None and args.role is None:
@@ -36,6 +41,15 @@ def main():
     if creds is None:
         print('No credentials found', file=sys.stderr)
         sys.exit(1)
+    if args.bash or args.csh:
+        if args.csh:
+            fmtenv='setenv {0} {1}'
+        else:
+            fmtenv='export {0}={1}'
+        print(fmtenv.format('AWS_ACCESS_KEY_ID', creds.aws_access_key_id))
+        print(fmtenv.format('AWS_SECRET_ACCESS_KEY', creds.aws_secret_access_key))
+        if creds.aws_session_token:
+            print(fmtenv.format('AWS_SESSION_TOKEN', creds.aws_session_token))
     value = {
         'Version': 1,
         'AccessKeyId': creds.aws_access_key_id,
