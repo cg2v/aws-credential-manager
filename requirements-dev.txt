@@ -7,7 +7,7 @@ cffi==2.0.0
 chardet==5.2.0
 charset-normalizer==3.4.4
 colorama==0.4.6
-cryptography==45.0.6
+cryptography==46.0.5
 greenlet==3.2.1
 idna==3.8
 iniconfig==2.0.0
