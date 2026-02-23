@@ -33,4 +33,4 @@ types-awscrt==0.20.9
 typing_extensions==4.13.2
 urllib3==2.6.3
 Werkzeug==3.1.3
-xmltodict==0.14.2
+xmltodict==1.0.4
