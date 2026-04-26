@@ -20,7 +20,7 @@ mypy_boto3_iam==1.42.4
 packaging==25.0
 pluggy==1.6.0
 pyflakes==3.4.0
-pycparser==2.22
+pycparser==3.0
 pytest==8.4.1
 pytest_mock==3.14.1
 python-dateutil==2.9.0.post0
