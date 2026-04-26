@@ -33,6 +33,7 @@ setup(
             'multicred-import = multicred.importer:main',
             'multicred-get = multicred.credhelper:main',
             'multicred-manage = multicred.manager:main',
+            'multicred-watch = multicred.watcher:main',
         ],
     },
 )

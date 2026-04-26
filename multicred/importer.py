@@ -16,29 +16,19 @@ def get_textstream(file: io.BufferedReader) -> io.TextIOWrapper:
     return io.TextIOWrapper(file, encoding=detected['encoding'])
 
 def do_import(filename: str, iolayer: Storage, profile: str):
-    '''Import credentials from a file'''
-    try:
-        with open(filename, 'rb') as rawfile:
-            textfile = get_textstream(rawfile)
-            creds = credentials.Credentials.from_shared_credentials_file(
-                textfile, profile_name=profile)
-    except FileNotFoundError:
-        print(f'File {filename} not found', file=sys.stderr)
-        sys.exit(1)
-    except OSError as e:
-        print(f'Error reading file: {e}', file=sys.stderr)
-        sys.exit(1)
-    except credentials.MissingCredentialsError as e:
-        print(f'Error reading credentials: {e}', file=sys.stderr)
-        sys.exit(1)
+    '''Import credentials from a file.
+
+    Raises FileNotFoundError or OSError on file access problems,
+    credentials.MissingCredentialsError when the requested profile is absent,
+    and MultiCredError when the credentials are inactive or cannot be stored.
+    '''
+    with open(filename, 'rb') as rawfile:
+        textfile = get_textstream(rawfile)
+        creds = credentials.Credentials.from_shared_credentials_file(
+            textfile, profile_name=profile)
     if not creds.is_valid:
-        print('Credentials are not active, cannot import', file=sys.stderr)
-        sys.exit(1)
-    try:
-        iolayer.import_credentials(creds)
-    except MultiCredError as e:
-        print(f'Error importing credentials: {e}', file=sys.stderr)
-        sys.exit(1)
+        raise MultiCredError('Credentials are not active, cannot import')
+    iolayer.import_credentials(creds)
 
 DB_PATH = 'sqlite:///' + os.path.expanduser('~/.aws/multicred.db')
 def main():
@@ -54,7 +44,20 @@ def main():
         print('No credentials file specified', file=sys.stderr)
         sys.exit(1)
 
-    do_import(args.cred_file, get_storage(DB_PATH), args.profile)
+    try:
+        do_import(args.cred_file, get_storage(DB_PATH), args.profile)
+    except FileNotFoundError:
+        print(f'File {args.cred_file} not found', file=sys.stderr)
+        sys.exit(1)
+    except OSError as e:
+        print(f'Error reading file: {e}', file=sys.stderr)
+        sys.exit(1)
+    except credentials.MissingCredentialsError as e:
+        print(f'Error reading credentials: {e}', file=sys.stderr)
+        sys.exit(1)
+    except MultiCredError as e:
+        print(f'Error importing credentials: {e}', file=sys.stderr)
+        sys.exit(1)
 
 if __name__ == '__main__':
     main()
