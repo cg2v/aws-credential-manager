@@ -27,7 +27,7 @@ python-dateutil==2.9.0.post0
 PyYAML==6.0.3
 requests==2.32.5
 responses==0.25.7
-s3transfer==0.16.0
+s3transfer==0.16.1
 six==1.16.0
 SQLAlchemy==2.0.46
 types-awscrt==0.20.9
