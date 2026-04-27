@@ -6,7 +6,7 @@ from sqlalchemy.exc import NoResultFound, IntegrityError, MultipleResultsFound
 
 from . import dbschema
 from . import credentials
-from .base_objects import MultiCredStorageError, MultiCredLinkError, MultiCredBadRequest
+from .base_objects import MultiCredStorageError, MultiCredLinkError, MultiCredBadRequest, DuplicateCredentialsError
 from .interfaces import IdentityHandle, Statistics, CredentialInfo
 from .utils import parse_principal
 
@@ -111,6 +111,11 @@ class DBStorage:
                     session, dbschema.AwsIdentityStorage, aws_account=account,
                     cred_type=identity.cred_type.value, name=identity.name,
                     create_method_kwargs={'arn': identity.aws_identity, 'userid': identity.aws_userid})
+                existing = session.query(dbschema.AwsCredentialStorage).filter_by(
+                    aws_access_key_id=creds.aws_access_key_id).first()
+                if existing is not None:
+                    raise DuplicateCredentialsError(
+                        f'Credentials with access key {creds.aws_access_key_id} are already present')
                 credential = dbschema.AwsCredentialStorage(
                     aws_identity=stored_id, aws_access_key_id=creds.aws_access_key_id,
                     aws_secret_access_key=creds.aws_secret_access_key,

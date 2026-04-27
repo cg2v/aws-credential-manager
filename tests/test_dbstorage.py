@@ -1,7 +1,7 @@
 from pytest import raises
 
 from sqlalchemy.exc import NoResultFound
-from multicred.base_objects import MultiCredLinkError
+from multicred.base_objects import MultiCredLinkError, DuplicateCredentialsError
 from multicred.dbschema import AwsAccountStorage, AwsIdentityStorage, AwsCredentialStorage
 
 def test_empty_storage(empty_storage):
@@ -257,3 +257,10 @@ def test_list_identity_credentials_multiple(multiple_creds_storage):
     assert len(creds) == 1
     assert creds[0].access_key not in access_keys
     assert creds[0].access_key != multiple_creds_storage.credentials.test_object.aws_access_key_id
+
+
+def test_import_duplicate_credentials_raises_error(role_creds_storage):
+    """Re-importing credentials with the same access key raises DuplicateCredentialsError."""
+    with raises(DuplicateCredentialsError):
+        role_creds_storage.test_object.import_credentials(
+            role_creds_storage.credentials.test_object)

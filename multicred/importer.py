@@ -7,7 +7,7 @@ import chardet
 from . import get_storage
 from . import credentials
 from .interfaces import Storage
-from .base_objects import MultiCredError
+from .base_objects import MultiCredError, DuplicateCredentialsError
 
 def get_textstream(file: io.BufferedReader) -> io.TextIOWrapper:
     '''Convert a binary file to a text stream'''
@@ -49,6 +49,8 @@ def do_import_cli(filename: str, iolayer: Storage, profile: str):
     except credentials.ExpiredCredentialsError:
         print('Credentials are not active, cannot import', file=sys.stderr)
         sys.exit(1)
+    except DuplicateCredentialsError as e:
+        print(f'Credentials are already present, skipping import: {e}', file=sys.stderr)
     except MultiCredError as e:
         print(f'Error importing credentials: {e}', file=sys.stderr)
         sys.exit(1)

@@ -8,6 +8,7 @@ from watchdog.events import FileSystemEventHandler, FileModifiedEvent, FileCreat
 from watchdog.observers import Observer
 
 from . import get_storage
+from .base_objects import DuplicateCredentialsError
 from .importer import do_import
 from .interfaces import Storage
 
@@ -59,6 +60,8 @@ class CredentialFileEventHandler(FileSystemEventHandler):
         try:
             do_import(abs_path, self._storage, profile)
             logger.info('Successfully imported credentials from %s', abs_path)
+        except DuplicateCredentialsError as e:
+            logger.info('Credentials from %s are already present, skipping: %s', abs_path, e)
         except Exception as e:
             logger.error('Failed to import credentials from %s: %s', abs_path, e)
 
