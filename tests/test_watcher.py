@@ -1,4 +1,5 @@
 import os
+import threading
 import time
 from configparser import ConfigParser
 from unittest.mock import MagicMock, patch
@@ -11,6 +12,9 @@ from multicred.watcher import (
     build_watched_files,
     run_watcher,
 )
+
+# Grace period to give a debounce_delay=0 timer time to fire in unit tests.
+_TIMER_GRACE_PERIOD = 0.05
 
 
 # ---------------------------------------------------------------------------
@@ -66,10 +70,12 @@ def test_handler_on_modified_calls_import(tmp_path):
     cred_file = str(tmp_path / 'creds.ini')
     watched = {os.path.abspath(cred_file): 'default'}
     storage = MagicMock()
+    called = threading.Event()
 
-    with patch('multicred.watcher.do_import') as mock_import:
-        handler = CredentialFileEventHandler(watched, storage)
+    with patch('multicred.watcher.do_import', side_effect=lambda *_: called.set()) as mock_import:
+        handler = CredentialFileEventHandler(watched, storage, debounce_delay=0)
         handler.on_modified(FakeFileSystemEvent(cred_file))
+        assert called.wait(timeout=2), "do_import was not called"
         mock_import.assert_called_once_with(os.path.abspath(cred_file), storage, 'default')
 
 
@@ -77,10 +83,12 @@ def test_handler_on_created_calls_import(tmp_path):
     cred_file = str(tmp_path / 'creds.ini')
     watched = {os.path.abspath(cred_file): 'default'}
     storage = MagicMock()
+    called = threading.Event()
 
-    with patch('multicred.watcher.do_import') as mock_import:
-        handler = CredentialFileEventHandler(watched, storage)
+    with patch('multicred.watcher.do_import', side_effect=lambda *_: called.set()) as mock_import:
+        handler = CredentialFileEventHandler(watched, storage, debounce_delay=0)
         handler.on_created(FakeFileSystemEvent(cred_file))
+        assert called.wait(timeout=2), "do_import was not called"
         mock_import.assert_called_once_with(os.path.abspath(cred_file), storage, 'default')
 
 
@@ -91,8 +99,9 @@ def test_handler_ignores_unwatched_file(tmp_path):
     storage = MagicMock()
 
     with patch('multicred.watcher.do_import') as mock_import:
-        handler = CredentialFileEventHandler(watched, storage)
+        handler = CredentialFileEventHandler(watched, storage, debounce_delay=0)
         handler.on_modified(FakeFileSystemEvent(other_file))
+        time.sleep(_TIMER_GRACE_PERIOD)  # give any accidental timer a chance to fire
         mock_import.assert_not_called()
 
 
@@ -102,8 +111,9 @@ def test_handler_ignores_directory_events(tmp_path):
     storage = MagicMock()
 
     with patch('multicred.watcher.do_import') as mock_import:
-        handler = CredentialFileEventHandler(watched, storage)
+        handler = CredentialFileEventHandler(watched, storage, debounce_delay=0)
         handler.on_modified(FakeFileSystemEvent(cred_file, is_directory=True))
+        time.sleep(_TIMER_GRACE_PERIOD)
         mock_import.assert_not_called()
 
 
@@ -112,14 +122,74 @@ def test_handler_multiple_files_different_profiles(tmp_path):
     file_b = os.path.abspath(str(tmp_path / 'b.ini'))
     watched = {file_a: 'profile_a', file_b: 'profile_b'}
     storage = MagicMock()
+    count = [0]
+    done = threading.Event()
 
-    with patch('multicred.watcher.do_import') as mock_import:
-        handler = CredentialFileEventHandler(watched, storage)
+    def counting_import(*_):
+        count[0] += 1
+        if count[0] >= 2:
+            done.set()
+
+    with patch('multicred.watcher.do_import', side_effect=counting_import) as mock_import:
+        handler = CredentialFileEventHandler(watched, storage, debounce_delay=0)
         handler.on_modified(FakeFileSystemEvent(file_a))
         handler.on_modified(FakeFileSystemEvent(file_b))
+        assert done.wait(timeout=2), "do_import was not called twice"
         assert mock_import.call_count == 2
         mock_import.assert_any_call(file_a, storage, 'profile_a')
         mock_import.assert_any_call(file_b, storage, 'profile_b')
+
+
+def test_handler_debounces_multiple_events(tmp_path):
+    """Multiple events for the same file within the debounce window result in one import."""
+    cred_file = os.path.abspath(str(tmp_path / 'creds.ini'))
+    watched = {cred_file: 'default'}
+    storage = MagicMock()
+    call_count = [0]
+    called = threading.Event()
+
+    def counting_import(*_):
+        call_count[0] += 1
+        called.set()
+
+    with patch('multicred.watcher.do_import', side_effect=counting_import) as mock_import:
+        handler = CredentialFileEventHandler(watched, storage, debounce_delay=0.2)
+        # Fire three events in quick succession – all within the debounce window.
+        handler.on_modified(FakeFileSystemEvent(cred_file))
+        handler.on_modified(FakeFileSystemEvent(cred_file))
+        handler.on_modified(FakeFileSystemEvent(cred_file))
+        # Wait for the single debounced import to fire.
+        assert called.wait(timeout=2), "do_import was not called"
+        # Allow extra time to confirm no additional calls arrive.
+        time.sleep(_TIMER_GRACE_PERIOD)
+        assert call_count[0] == 1, f"Expected 1 import, got {call_count[0]}"
+        mock_import.assert_called_once_with(cred_file, storage, 'default')
+
+
+def test_handler_continues_after_import_error(tmp_path):
+    """An exception from do_import is logged but does not crash the handler."""
+    cred_file = os.path.abspath(str(tmp_path / 'creds.ini'))
+    watched = {cred_file: 'default'}
+    storage = MagicMock()
+    first_called = threading.Event()
+    second_called = threading.Event()
+    call_count = [0]
+
+    def failing_then_ok(*_):
+        call_count[0] += 1
+        if call_count[0] == 1:
+            first_called.set()
+            raise OSError('simulated read error')
+        second_called.set()
+
+    with patch('multicred.watcher.do_import', side_effect=failing_then_ok):
+        handler = CredentialFileEventHandler(watched, storage, debounce_delay=0)
+        # First event – do_import raises; handler must not crash.
+        handler.on_modified(FakeFileSystemEvent(cred_file))
+        assert first_called.wait(timeout=2), "first do_import was not called"
+        # Second event – should still work after the previous error.
+        handler.on_modified(FakeFileSystemEvent(cred_file))
+        assert second_called.wait(timeout=2), "second do_import was not called"
 
 
 # ---------------------------------------------------------------------------
@@ -130,7 +200,6 @@ def test_handler_multiple_files_different_profiles(tmp_path):
 def test_run_watcher_detects_file_change(tmp_path):
     """Write a credentials file, start the watcher, modify the file, and
     assert that do_import is called with the correct arguments."""
-    import threading
     import boto3
 
     # Obtain real STS credentials so they pass the is_valid check inside do_import.
@@ -158,7 +227,7 @@ def test_run_watcher_detects_file_change(tmp_path):
 
     with patch('multicred.watcher.do_import', side_effect=fake_import):
         def _run():
-            run_watcher(watched, storage, poll_interval=0.05)
+            run_watcher(watched, storage, poll_interval=0.05, debounce_delay=0)
 
         t = threading.Thread(target=_run, daemon=True)
         t.start()

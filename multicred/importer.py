@@ -16,12 +16,27 @@ def get_textstream(file: io.BufferedReader) -> io.TextIOWrapper:
     return io.TextIOWrapper(file, encoding=detected['encoding'])
 
 def do_import(filename: str, iolayer: Storage, profile: str):
-    '''Import credentials from a file'''
+    '''Import credentials from a file.
+
+    Raises:
+        OSError: If the file cannot be opened or read.
+        credentials.MissingCredentialsError: If the requested profile is absent.
+        credentials.ExpiredCredentialsError: If the credentials are not currently active.
+        MultiCredError: If the credentials cannot be stored.
+    '''
+    with open(filename, 'rb') as rawfile:
+        textfile = get_textstream(rawfile)
+        creds = credentials.Credentials.from_shared_credentials_file(
+            textfile, profile_name=profile)
+    if not creds.is_valid:
+        raise credentials.ExpiredCredentialsError(
+            f'Credentials in {filename} are not active, cannot import')
+    iolayer.import_credentials(creds)
+
+def do_import_cli(filename: str, iolayer: Storage, profile: str):
+    '''Wrapper around do_import for CLI use: prints errors and exits on failure.'''
     try:
-        with open(filename, 'rb') as rawfile:
-            textfile = get_textstream(rawfile)
-            creds = credentials.Credentials.from_shared_credentials_file(
-                textfile, profile_name=profile)
+        do_import(filename, iolayer, profile)
     except FileNotFoundError:
         print(f'File {filename} not found', file=sys.stderr)
         sys.exit(1)
@@ -31,11 +46,9 @@ def do_import(filename: str, iolayer: Storage, profile: str):
     except credentials.MissingCredentialsError as e:
         print(f'Error reading credentials: {e}', file=sys.stderr)
         sys.exit(1)
-    if not creds.is_valid:
+    except credentials.ExpiredCredentialsError:
         print('Credentials are not active, cannot import', file=sys.stderr)
         sys.exit(1)
-    try:
-        iolayer.import_credentials(creds)
     except MultiCredError as e:
         print(f'Error importing credentials: {e}', file=sys.stderr)
         sys.exit(1)
@@ -54,7 +67,7 @@ def main():
         print('No credentials file specified', file=sys.stderr)
         sys.exit(1)
 
-    do_import(args.cred_file, get_storage(DB_PATH), args.profile)
+    do_import_cli(args.cred_file, get_storage(DB_PATH), args.profile)
 
 if __name__ == '__main__':
     main()

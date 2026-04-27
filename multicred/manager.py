@@ -6,7 +6,7 @@ import boto3
 from . import get_storage, __version__
 from . import credentials
 from .interfaces import Storage
-from .importer import do_import
+from .importer import do_import_cli
 
 DB_PATH = 'sqlite:///' + os.path.expanduser('~/.aws/multicred.db')
 def build_parser():
@@ -128,7 +128,7 @@ def main():
         if not args.cred_file:
             print('No credentials file specified', file=sys.stderr)
             sys.exit(1)
-        do_import(args.cred_file, iolayer, args.profile)
+        do_import_cli(args.cred_file, iolayer, args.profile)
     elif args.subcommand == 'link':
         do_link(args, iolayer)
     elif args.subcommand == 'unlink':

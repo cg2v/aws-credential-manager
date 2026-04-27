@@ -1,6 +1,7 @@
 import argparse
 import logging
 import os
+import threading
 import time
 
 from watchdog.events import FileSystemEventHandler, FileModifiedEvent, FileCreatedEvent
@@ -14,26 +15,61 @@ logger = logging.getLogger(__name__)
 
 DB_PATH = 'sqlite:///' + os.path.expanduser('~/.aws/multicred.db')
 
+_DEFAULT_DEBOUNCE_DELAY = 1.0
+
 
 class CredentialFileEventHandler(FileSystemEventHandler):
-    """Watchdog event handler that imports credentials when a watched file changes."""
+    """Watchdog event handler that imports credentials when a watched file changes.
 
-    def __init__(self, watched_files: dict[str, str], storage: Storage):
+    Multiple filesystem events for the same file within *debounce_delay* seconds are
+    collapsed into a single import call, which avoids duplicate imports when an
+    application writes a file in several steps (e.g. Chrome's download process).
+    """
+
+    def __init__(self, watched_files: dict[str, str], storage: Storage,
+                 debounce_delay: float = _DEFAULT_DEBOUNCE_DELAY):
         """
         :param watched_files: mapping of absolute file path -> profile name to import
         :param storage: storage backend to import credentials into
+        :param debounce_delay: seconds to wait after the last event before importing
         """
         super().__init__()
         self._watched_files = watched_files
         self._storage = storage
+        self._debounce_delay = debounce_delay
+        self._pending_timers: dict[str, threading.Timer] = {}
+        self._lock = threading.Lock()
+
+    def _schedule_import(self, abs_path: str, profile: str):
+        """Cancel any existing debounce timer for *abs_path* and start a new one."""
+        with self._lock:
+            existing = self._pending_timers.pop(abs_path, None)
+            if existing is not None:
+                existing.cancel()
+            timer = threading.Timer(
+                self._debounce_delay, self._do_import, args=(abs_path, profile))
+            self._pending_timers[abs_path] = timer
+            timer.start()
+
+    def _do_import(self, abs_path: str, profile: str):
+        """Execute the import after the debounce window expires."""
+        with self._lock:
+            self._pending_timers.pop(abs_path, None)
+        logger.info('Importing credentials from %s (profile: %s)', abs_path, profile)
+        try:
+            do_import(abs_path, self._storage, profile)
+            logger.info('Successfully imported credentials from %s', abs_path)
+        except Exception as e:
+            logger.error('Failed to import credentials from %s: %s', abs_path, e)
 
     def _try_import(self, path: str):
         abs_path = os.path.abspath(path)
         profile = self._watched_files.get(abs_path)
         if profile is None:
             return
-        logger.info('Detected change in %s, importing profile %s', abs_path, profile)
-        do_import(abs_path, self._storage, profile)
+        logger.debug('Detected change in %s, scheduling import (profile: %s)',
+                     abs_path, profile)
+        self._schedule_import(abs_path, profile)
 
     def on_modified(self, event: FileModifiedEvent):
         if not event.is_directory:
@@ -49,9 +85,12 @@ def build_watched_files(paths: list[str], profile: str) -> dict[str, str]:
     return {os.path.abspath(p): profile for p in paths}
 
 
-def run_watcher(watched_files: dict[str, str], storage: Storage, poll_interval: float = 1.0):
+def run_watcher(watched_files: dict[str, str], storage: Storage,
+                poll_interval: float = 1.0,
+                debounce_delay: float = _DEFAULT_DEBOUNCE_DELAY):
     """Start file watchers for the given files and block until interrupted."""
-    handler = CredentialFileEventHandler(watched_files, storage)
+    handler = CredentialFileEventHandler(watched_files, storage,
+                                         debounce_delay=debounce_delay)
     observer = Observer()
 
     watched_dirs: set[str] = set()
@@ -79,6 +118,10 @@ def main():
     parser.add_argument('--profile', help='Profile name to import credentials from',
                         default='default')
     parser.add_argument('--debug', help='Enable debug logging', action='store_true')
+    parser.add_argument('--debounce', metavar='SECONDS', type=float,
+                        default=_DEFAULT_DEBOUNCE_DELAY,
+                        help='Seconds to wait after a change before importing '
+                             f'(default: {_DEFAULT_DEBOUNCE_DELAY})')
     parser.add_argument('cred_files', metavar='cred_file', nargs='+',
                         help='File(s) to watch for credential changes')
     args = parser.parse_args()
@@ -89,7 +132,7 @@ def main():
 
     storage = get_storage(DB_PATH)
     watched_files = build_watched_files(args.cred_files, args.profile)
-    run_watcher(watched_files, storage)
+    run_watcher(watched_files, storage, debounce_delay=args.debounce)
 
 
 if __name__ == '__main__':
