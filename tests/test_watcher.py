@@ -1,3 +1,4 @@
+import logging
 import os
 import threading
 import time
@@ -6,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 from moto import mock_aws
 
+from multicred.base_objects import DuplicateCredentialsError
 from multicred.dbstorage import DBStorage
 from multicred.watcher import (
     CredentialFileEventHandler,
@@ -190,6 +192,31 @@ def test_handler_continues_after_import_error(tmp_path):
         # Second event – should still work after the previous error.
         handler.on_modified(FakeFileSystemEvent(cred_file))
         assert second_called.wait(timeout=2), "second do_import was not called"
+
+
+def test_handler_logs_info_on_duplicate_credentials(tmp_path, caplog):
+    """DuplicateCredentialsError from do_import is logged at INFO level, not ERROR."""
+    cred_file = os.path.abspath(str(tmp_path / 'creds.ini'))
+    watched = {cred_file: 'default'}
+    storage = MagicMock()
+    called = threading.Event()
+
+    def duplicate_import(*_):
+        called.set()
+        raise DuplicateCredentialsError('Credentials with access key AKIAEXAMPLE are already present')
+
+    with patch('multicred.watcher.do_import', side_effect=duplicate_import):
+        with caplog.at_level(logging.DEBUG, logger='multicred.watcher'):
+            handler = CredentialFileEventHandler(watched, storage, debounce_delay=0)
+            handler.on_modified(FakeFileSystemEvent(cred_file))
+            assert called.wait(timeout=2), "do_import was not called"
+            time.sleep(_TIMER_GRACE_PERIOD)
+
+    error_records = [r for r in caplog.records if r.levelno >= logging.ERROR]
+    info_records = [r for r in caplog.records
+                    if r.levelno == logging.INFO and 'already present' in r.message]
+    assert not error_records, "Duplicate credentials should not be logged as an error"
+    assert info_records, "Duplicate credentials should be logged as info"
 
 
 # ---------------------------------------------------------------------------

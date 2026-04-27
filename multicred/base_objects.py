@@ -48,3 +48,6 @@ class MultiCredBadRequest(MultiCredError, ValueError):
 
 class MultiCredLinkError(MultiCredBadRequest):
     """Exception raised for bad link/unlink requests"""
+
+class DuplicateCredentialsError(MultiCredStorageError):
+    """Exception raised when credentials being imported are already present in storage"""
