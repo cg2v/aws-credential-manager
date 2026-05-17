@@ -90,8 +90,11 @@ if 'winreg' not in sys.modules:
     winreg_stub = types.ModuleType('winreg')
     winreg_stub.HKEY_CURRENT_USER = 0x80000001
     winreg_stub.KEY_SET_VALUE = 2
+    winreg_stub.KEY_READ = 0x20019
     winreg_stub.REG_SZ = 1
+    winreg_stub.REG_MULTI_SZ = 7
     winreg_stub.OpenKey = MagicMock()
+    winreg_stub.CreateKey = MagicMock()
     winreg_stub.QueryValueEx = MagicMock()
     winreg_stub.SetValueEx = MagicMock()
     winreg_stub.DeleteValue = MagicMock()
@@ -102,6 +105,11 @@ import ctypes as _ctypes
 if not hasattr(_ctypes, 'windll'):
     windll_stub = MagicMock()
     _ctypes.windll = windll_stub
+
+# Stub tkinter.filedialog (used by SettingsPane)
+from tkinter import filedialog as _filedialog_module
+_filedialog_module.asksaveasfilename = MagicMock(return_value='')
+_filedialog_module.askopenfilename = MagicMock(return_value='')
 
 from multicred import trayapp  # noqa: E402 — must come after stubs
 
@@ -121,6 +129,19 @@ def _make_storage():
         max_credentials_per_identity=3,
     )
     return storage
+
+
+def _make_app_for_testing():
+    """Create a CredentialTrayApp instance for testing with mocked storage."""
+    settings = trayapp.TraySettings(
+        db_path='sqlite:///test.db',
+        profile='default',
+        debounce_seconds=5.0,
+        watched_paths=['/fake/creds'],
+    )
+    with patch.object(trayapp, 'get_storage', return_value=_make_storage()):
+        app = trayapp.CredentialTrayApp(settings=settings)
+    return app
 
 
 # ---------------------------------------------------------------------------
@@ -263,9 +284,14 @@ class TestWrappedHandler:
 
 class TestPauseResume:
     def _make_app(self):
-        app = trayapp.CredentialTrayApp(
-            paths=['/fake/creds'], storage=_make_storage(),
-            profile='default', debounce_delay=5.0)
+        settings = trayapp.TraySettings(
+            db_path='sqlite:///test.db',
+            profile='default',
+            debounce_seconds=5.0,
+            watched_paths=['/fake/creds'],
+        )
+        with patch.object(trayapp, 'get_storage', return_value=_make_storage()):
+            app = trayapp.CredentialTrayApp(settings=settings)
         app._icon = MagicMock()
         return app
 
@@ -300,17 +326,13 @@ class TestPauseResume:
 
 class TestLogQueue:
     def test_log_enqueues_message(self):
-        app = trayapp.CredentialTrayApp(
-            paths=['/fake/creds'], storage=_make_storage(),
-            profile='default', debounce_delay=5.0)
+        app = _make_app_for_testing()
         app._log('hello world')
         msg = app._log_queue.get_nowait()
         assert 'hello world' in msg
 
     def test_poll_log_queue_drains_into_log_window(self):
-        app = trayapp.CredentialTrayApp(
-            paths=['/fake/creds'], storage=_make_storage(),
-            profile='default', debounce_delay=5.0)
+        app = _make_app_for_testing()
 
         mock_root = MagicMock()
         mock_log_window = MagicMock()
@@ -333,9 +355,7 @@ class TestLogQueue:
 
 class TestQuit:
     def test_quit_sets_stop_event(self):
-        app = trayapp.CredentialTrayApp(
-            paths=['/fake/creds'], storage=_make_storage(),
-            profile='default', debounce_delay=5.0)
+        app = _make_app_for_testing()
         app._icon = MagicMock()
         mock_root = MagicMock()
         app._root = mock_root
@@ -344,3 +364,157 @@ class TestQuit:
         assert app._stop_event.is_set()
         app._icon.stop.assert_called_once()
         mock_root.after.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# SettingsPane
+# ---------------------------------------------------------------------------
+
+class TestSettingsPane:
+    def _make_app_mock(self):
+        """Create a mock CredentialTrayApp for testing."""
+        app = MagicMock()
+        app.apply_settings = MagicMock()
+        return app
+
+    def test_settings_pane_save_validates_debounce(self):
+        """Test that _save rejects non-positive debounce values."""
+        root = MagicMock()
+        app = self._make_app_mock()
+
+        with patch.object(trayapp, 'tk'), \
+             patch.object(trayapp, 'load_settings') as mock_load, \
+             patch.object(trayapp.messagebox, 'showwarning') as mock_warn:
+            mock_load.return_value = trayapp.TraySettings(
+                db_path='sqlite:///test.db',
+                profile='default',
+                debounce_seconds=5.0,
+                watched_paths=[],
+            )
+            pane = trayapp.SettingsPane(root, app)
+            # Simulate invalid input
+            pane._debounce_var.set('-1')
+            pane._save()
+            mock_warn.assert_called()
+
+    def test_settings_pane_save_validates_empty_db_path(self):
+        """Test that _save rejects empty database path."""
+        root = MagicMock()
+        app = self._make_app_mock()
+
+        with patch.object(trayapp, 'tk'), \
+             patch.object(trayapp, 'load_settings') as mock_load, \
+             patch.object(trayapp.messagebox, 'showwarning') as mock_warn:
+            mock_load.return_value = trayapp.TraySettings(
+                db_path='sqlite:///test.db',
+                profile='default',
+                debounce_seconds=5.0,
+                watched_paths=[],
+            )
+            pane = trayapp.SettingsPane(root, app)
+            # Simulate empty DB path
+            pane._db_path_var.set('')
+            pane._save()
+            mock_warn.assert_called()
+
+    def test_settings_pane_save_calls_save_settings_and_apply(self):
+        """Test that _save calls save_settings and apply_settings on valid input."""
+        root = MagicMock()
+        app = self._make_app_mock()
+
+        with patch.object(trayapp, 'tk'), \
+             patch.object(trayapp, 'load_settings') as mock_load, \
+             patch.object(trayapp, 'save_settings') as mock_save, \
+             patch.object(trayapp.messagebox, 'showinfo'):
+            mock_load.return_value = trayapp.TraySettings(
+                db_path='sqlite:///test.db',
+                profile='default',
+                debounce_seconds=5.0,
+                watched_paths=[],
+            )
+            pane = trayapp.SettingsPane(root, app)
+            # Set valid values
+            pane._db_path_var.set('sqlite:///new.db')
+            pane._profile_var.set('default')
+            pane._debounce_var.set('3.0')
+            pane._save()
+
+            # Verify save_settings was called
+            mock_save.assert_called_once()
+            # Verify apply_settings was called
+            app.apply_settings.assert_called_once()
+
+    def test_settings_pane_cancel_hides(self):
+        """Test that cancel() hides the pane without saving."""
+        root = MagicMock()
+        app = self._make_app_mock()
+
+        with patch.object(trayapp, 'tk'), \
+             patch.object(trayapp, 'load_settings') as mock_load:
+            mock_load.return_value = trayapp.TraySettings(
+                db_path='sqlite:///test.db',
+                profile='default',
+                debounce_seconds=5.0,
+                watched_paths=[],
+            )
+            pane = trayapp.SettingsPane(root, app)
+            pane._window = MagicMock()
+            pane._cancel()
+            pane._window.withdraw.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# main() CLI entry point
+# ---------------------------------------------------------------------------
+
+class TestMain:
+    def test_main_with_no_args(self):
+        """Test that main() creates and starts CredentialTrayApp with no CLI args."""
+        with patch.object(trayapp, 'CredentialTrayApp') as mock_app_class, \
+             patch.object(trayapp, '_check_single_instance'), \
+             patch('sys.argv', ['multicred-tray']):
+            mock_app = MagicMock()
+            mock_app_class.return_value = mock_app
+
+            trayapp.main()
+
+            # Verify app was created with no arguments (loads from registry)
+            mock_app_class.assert_called_once_with()
+            # Verify app.start() was called
+            mock_app.start.assert_called_once()
+
+    def test_main_with_debug_flag(self):
+        """Test that main() accepts --debug flag."""
+        with patch.object(trayapp, 'CredentialTrayApp') as mock_app_class, \
+             patch.object(trayapp, '_check_single_instance'), \
+             patch('sys.argv', ['multicred-tray', '--debug']), \
+             patch.object(trayapp.logging, 'basicConfig') as mock_logging:
+            mock_app = MagicMock()
+            mock_app_class.return_value = mock_app
+
+            trayapp.main()
+
+            # Verify logging was configured at DEBUG level
+            call_kwargs = mock_logging.call_args[1]
+            assert call_kwargs['level'] == trayapp.logging.DEBUG
+            # Verify app was created and started
+            mock_app_class.assert_called_once_with()
+            mock_app.start.assert_called_once()
+
+    def test_main_without_debug_flag(self):
+        """Test that main() configures WARNING logging by default."""
+        with patch.object(trayapp, 'CredentialTrayApp') as mock_app_class, \
+             patch.object(trayapp, '_check_single_instance'), \
+             patch('sys.argv', ['multicred-tray']), \
+             patch.object(trayapp.logging, 'basicConfig') as mock_logging:
+            mock_app = MagicMock()
+            mock_app_class.return_value = mock_app
+
+            trayapp.main()
+
+            # Verify logging was configured at WARNING level
+            call_kwargs = mock_logging.call_args[1]
+            assert call_kwargs['level'] == trayapp.logging.WARNING
+            # Verify app was created and started
+            mock_app_class.assert_called_once_with()
+            mock_app.start.assert_called_once()

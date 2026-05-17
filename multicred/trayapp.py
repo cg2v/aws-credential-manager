@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import ctypes
 import datetime
+from dataclasses import dataclass
 import logging
 import os
 import queue
@@ -29,7 +30,7 @@ import sys
 import threading
 from typing import Any
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import filedialog, messagebox
 from tkinter.scrolledtext import ScrolledText
 import winreg
 from watchdog.observers import Observer
@@ -39,15 +40,13 @@ from PIL import Image, ImageDraw
 
 from . import get_storage
 from . import watcher
-from .interfaces import Storage
 
 logger = logging.getLogger(__name__)
-
-DB_PATH = 'sqlite:///' + os.path.expanduser('~/.aws/multicred.db')
 
 _MUTEX_NAME = 'Global\\MulticredTrayApp'
 _AUTOSTART_KEY = r'Software\Microsoft\Windows\CurrentVersion\Run'
 _AUTOSTART_VALUE = 'MulticredTray'
+_SETTINGS_KEY = r'Software\Multicred\TrayApp'
 _ICON_SIZE = 64
 _LOG_QUEUE_POLL_MS = 200
 
@@ -67,6 +66,64 @@ _STATUS_TOOLTIPS = {
     _STATUS_PAUSED: 'MulticredTray — paused',
     _STATUS_ERROR: 'MulticredTray — last import failed',
 }
+
+
+# ---------------------------------------------------------------------------
+# Settings dataclass and registry helpers
+# ---------------------------------------------------------------------------
+
+@dataclass
+class TraySettings:
+    """Application settings stored in Windows registry."""
+    db_path: str
+    profile: str
+    debounce_seconds: float
+    watched_paths: list[str]
+
+
+def load_settings() -> TraySettings:
+    """Load settings from registry, creating key with defaults if missing."""
+    default_db_path = 'sqlite:///' + os.path.expanduser('~/.aws/multicred.db')
+    defaults = TraySettings(
+        db_path=default_db_path,
+        profile='default',
+        debounce_seconds=5.0,
+        watched_paths=[],
+    )
+
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _SETTINGS_KEY) as key:
+            db_path = winreg.QueryValueEx(key, 'DatabasePath')[0]
+            profile = winreg.QueryValueEx(key, 'Profile')[0]
+            debounce_seconds = float(winreg.QueryValueEx(key, 'DebounceSeconds')[0])
+            watched_paths = list(winreg.QueryValueEx(key, 'WatchedPaths')[0]) if winreg.QueryValueEx(key, 'WatchedPaths')[0] else []
+            return TraySettings(
+                db_path=db_path,
+                profile=profile,
+                debounce_seconds=debounce_seconds,
+                watched_paths=watched_paths,
+            )
+    except FileNotFoundError:
+        # Key doesn't exist; create it with defaults and return defaults
+        save_settings(defaults)
+        return defaults
+    except (ValueError, OSError) as exc:
+        logger.warning(f'Failed to load settings from registry: {exc}. Using defaults.')
+        return defaults
+
+
+def save_settings(settings: TraySettings) -> None:
+    """Save settings to registry, creating key if needed."""
+    try:
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, _SETTINGS_KEY) as key:
+            winreg.SetValueEx(key, 'DatabasePath', 0, winreg.REG_SZ, settings.db_path)
+            winreg.SetValueEx(key, 'Profile', 0, winreg.REG_SZ, settings.profile)
+            winreg.SetValueEx(key, 'DebounceSeconds', 0, winreg.REG_SZ, str(settings.debounce_seconds))
+            # REG_MULTI_SZ is type 7
+            winreg.SetValueEx(key, 'WatchedPaths', 0, 7, settings.watched_paths)
+    except OSError as exc:
+        logger.error(f'Failed to save settings to registry: {exc}')
+
 
 # ---------------------------------------------------------------------------
 # Single-instance guard
@@ -178,6 +235,179 @@ class LogWindow:
         self._text.configure(state='disabled')
         self._text.see(tk.END)
 
+
+# ---------------------------------------------------------------------------
+# Settings pane
+# ---------------------------------------------------------------------------
+
+class SettingsPane:
+    """Tkinter settings dialog for configuring tray app settings."""
+
+    def __init__(self, root: tk.Tk, app: CredentialTrayApp) -> None:
+        self._root = root
+        self._app = app
+        self._window = tk.Toplevel(root)
+        self._window.title('MulticredTray — Settings')
+        self._window.geometry('600x500')
+        self._window.protocol('WM_DELETE_WINDOW', self.hide)
+        self._window.withdraw()  # start hidden
+
+        # Build the form
+        frame = tk.Frame(self._window, padx=10, pady=10)
+        frame.pack(fill='both', expand=True)
+
+        # Database Path
+        tk.Label(frame, text='Database Path:', font=('Arial', 10, 'bold')).grid(
+            row=0, column=0, sticky='w', pady=(5, 2))
+        db_frame = tk.Frame(frame)
+        db_frame.grid(row=1, column=0, columnspan=2, sticky='ew', pady=(0, 10))
+        db_frame.columnconfigure(0, weight=1)
+        self._db_path_var = tk.StringVar()
+        self._db_path_entry = tk.Entry(db_frame, textvariable=self._db_path_var)
+        self._db_path_entry.pack(side='left', fill='x', expand=True, padx=(0, 5))
+        tk.Button(db_frame, text='Browse…', command=self._browse_db).pack(side='left')
+
+        # Profile
+        tk.Label(frame, text='Profile:', font=('Arial', 10, 'bold')).grid(
+            row=2, column=0, sticky='w', pady=(5, 2))
+        self._profile_var = tk.StringVar()
+        tk.Entry(frame, textvariable=self._profile_var).grid(
+            row=3, column=0, columnspan=2, sticky='ew', pady=(0, 10))
+
+        # Debounce Seconds
+        tk.Label(frame, text='Debounce Delay (seconds):', font=('Arial', 10, 'bold')).grid(
+            row=4, column=0, sticky='w', pady=(5, 2))
+        self._debounce_var = tk.StringVar()
+        tk.Entry(frame, textvariable=self._debounce_var).grid(
+            row=5, column=0, columnspan=2, sticky='ew', pady=(0, 10))
+
+        # Watched Paths
+        tk.Label(frame, text='Watched Credential Files:', font=('Arial', 10, 'bold')).grid(
+            row=6, column=0, columnspan=2, sticky='w', pady=(5, 2))
+        paths_frame = tk.Frame(frame)
+        paths_frame.grid(row=7, column=0, columnspan=2, sticky='nsew', pady=(0, 10))
+        paths_frame.columnconfigure(0, weight=1)
+        paths_frame.rowconfigure(0, weight=1)
+
+        scrollbar = tk.Scrollbar(paths_frame)
+        scrollbar.pack(side='right', fill='y')
+        self._paths_listbox = tk.Listbox(paths_frame, yscrollcommand=scrollbar.set)
+        self._paths_listbox.pack(side='left', fill='both', expand=True)
+        scrollbar.config(command=self._paths_listbox.yview)
+
+        # Add/Remove buttons for paths
+        buttons_frame = tk.Frame(frame)
+        buttons_frame.grid(row=8, column=0, columnspan=2, sticky='ew', pady=(0, 10))
+        tk.Button(buttons_frame, text='Add Path…', command=self._add_path).pack(side='left', padx=(0, 5))
+        tk.Button(buttons_frame, text='Remove Selected', command=self._remove_path).pack(side='left')
+
+        # Save / Cancel buttons
+        button_frame = tk.Frame(frame)
+        button_frame.grid(row=9, column=0, columnspan=2, sticky='e', pady=(10, 0))
+        tk.Button(button_frame, text='Save', command=self._save).pack(side='left', padx=(0, 5))
+        tk.Button(button_frame, text='Cancel', command=self._cancel).pack(side='left')
+
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(7, weight=1)
+
+    # ------------------------------------------------------------------
+
+    def show(self) -> None:
+        """Show the settings pane, reloading current settings from registry."""
+        self._load()
+        self._window.deiconify()
+        self._window.lift()
+
+    def hide(self) -> None:
+        """Hide the settings pane without saving."""
+        self._window.withdraw()
+
+    def _load(self) -> None:
+        """Populate fields from current registry settings."""
+        try:
+            settings = load_settings()
+            self._db_path_var.set(settings.db_path)
+            self._profile_var.set(settings.profile)
+            self._debounce_var.set(str(settings.debounce_seconds))
+            self._paths_listbox.delete(0, tk.END)
+            for path in settings.watched_paths:
+                self._paths_listbox.insert(tk.END, path)
+        except Exception as exc:
+            messagebox.showerror('Settings Error', f'Failed to load settings: {exc}')
+
+    def _save(self) -> None:
+        """Validate, save settings to registry, and apply to app."""
+        try:
+            # Validate debounce
+            debounce_seconds = float(self._debounce_var.get())
+            if debounce_seconds <= 0:
+                messagebox.showwarning('Invalid Input', 'Debounce delay must be positive.')
+                return
+
+            # Get paths from listbox
+            watched_paths = list(self._paths_listbox.get(0, tk.END))
+
+            # Create new settings
+            new_settings = TraySettings(
+                db_path=self._db_path_var.get(),
+                profile=self._profile_var.get(),
+                debounce_seconds=debounce_seconds,
+                watched_paths=watched_paths,
+            )
+
+            # Validate DB path (basic check)
+            if not new_settings.db_path:
+                messagebox.showwarning('Invalid Input', 'Database path cannot be empty.')
+                return
+
+            # Save to registry
+            save_settings(new_settings)
+
+            # Apply settings to app
+            self._app.apply_settings(new_settings)
+
+            messagebox.showinfo('Settings', 'Settings saved successfully.')
+            self.hide()
+        except ValueError:
+            messagebox.showwarning('Invalid Input', 'Debounce delay must be a valid number.')
+        except Exception as exc:
+            messagebox.showerror('Settings Error', f'Failed to save settings: {exc}')
+
+    def _cancel(self) -> None:
+        """Close without saving."""
+        self.hide()
+
+    def _browse_db(self) -> None:
+        """Open a file dialog to select or create a database file."""
+        file_path = filedialog.asksaveasfilename(
+            title='Select or create database file',
+            defaultextension='.db',
+            filetypes=[('SQLite Database', '*.db'), ('All Files', '*.*')],
+        )
+        if file_path:
+            # Convert to sqlite:// URI format
+            uri = 'sqlite:///' + file_path.replace('\\', '/')
+            self._db_path_var.set(uri)
+
+    def _add_path(self) -> None:
+        """Open a file dialog to add a credential file to the watched paths."""
+        file_path = filedialog.askopenfilename(
+            title='Select a credential file to monitor',
+            filetypes=[('All Files', '*.*')],
+        )
+        if file_path:
+            # Check if already in list
+            current_paths = list(self._paths_listbox.get(0, tk.END))
+            if file_path not in current_paths:
+                self._paths_listbox.insert(tk.END, file_path)
+
+    def _remove_path(self) -> None:
+        """Remove the selected path from the listbox."""
+        selection = self._paths_listbox.curselection()
+        if selection:
+            self._paths_listbox.delete(selection[0])
+
+
 class WrappedCredentialsFileEventHandler(watcher.CredentialFileEventHandler):
 
     def __init__(self, *args, **kwargs):
@@ -206,13 +436,20 @@ class WrappedCredentialsFileEventHandler(watcher.CredentialFileEventHandler):
 class CredentialTrayApp:
     """Windows system-tray daemon that watches credential files and imports them."""
 
-    def __init__(self, paths: list[str], storage: Storage, profile: str,
-                 debounce_delay: float = 5.0) -> None:
-        self._paths = watcher.build_watched_files(paths, profile)
-        self._storage = storage
-        self._profile = profile
-        self._debounce_delay = debounce_delay
-        self._has_paths = bool(paths)  # Track if we were given paths
+    def __init__(self, settings: TraySettings | None = None) -> None:
+        """Initialize the app with settings. If settings is None, load from registry."""
+        if settings is None:
+            settings = load_settings()
+        self._settings = settings
+
+        # Create storage from settings
+        self._storage = get_storage(settings.db_path)
+
+        # Build watched files map from settings
+        self._paths = watcher.build_watched_files(settings.watched_paths, settings.profile)
+        self._profile = settings.profile
+        self._debounce_delay = settings.debounce_seconds
+        self._has_paths = bool(settings.watched_paths)  # Track if we have paths
 
         self._stop_event = threading.Event()
 
@@ -220,6 +457,7 @@ class CredentialTrayApp:
         # Start paused if no paths provided; otherwise start watching
         self._status = _STATUS_PAUSED if not self._has_paths else _STATUS_WATCHING
         self._log_window: LogWindow | None = None
+        self._settings_pane: SettingsPane | None = None
         self._icon: Any | None = None
         self._root: tk.Tk | None = None  # tkinter root; set in start()
         self._observer: BaseObserver | None = None  # watchdog observer; set in start()
@@ -237,6 +475,7 @@ class CredentialTrayApp:
         self._root.title('MulticredTray')
 
         self._log_window = LogWindow(self._root)
+        self._settings_pane = SettingsPane(self._root, self)
 
         self._icon = pystray.Icon(
             'MulticredTray',
@@ -273,6 +512,7 @@ class CredentialTrayApp:
         return pystray.Menu(
             pystray.MenuItem('Show / hide log', self._on_show_hide_log),
             pystray.MenuItem('Statistics…', self._on_stats),
+            pystray.MenuItem('Settings…', self._on_settings),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(
                 'Pause watching',
@@ -299,6 +539,10 @@ class CredentialTrayApp:
     def _on_stats(self, icon=None, item=None) -> None:
         if self._root:
             self._root.after(0, self._show_stats_dialog)
+
+    def _on_settings(self, icon=None, item=None) -> None:
+        if self._root and self._settings_pane:
+            self._root.after(0, self._settings_pane.show)
 
     def _show_stats_dialog(self) -> None:
         try:
@@ -343,6 +587,49 @@ class CredentialTrayApp:
             self._icon.stop()
         if self._root:
             self._root.after(0, self._root.quit)
+
+    def apply_settings(self, new_settings: TraySettings) -> None:
+        """Apply new settings: update storage, paths, and observer as needed."""
+        try:
+            # Check if DB path changed; recreate storage if so
+            if new_settings.db_path != self._settings.db_path:
+                self._storage = get_storage(new_settings.db_path)
+                self._log(f'Database path updated: {new_settings.db_path}')
+
+            # Check if watched paths or profile changed
+            paths_changed = new_settings.watched_paths != self._settings.watched_paths
+            profile_changed = new_settings.profile != self._settings.profile
+            debounce_changed = new_settings.debounce_seconds != self._settings.debounce_seconds
+
+            if paths_changed or profile_changed or debounce_changed:
+                # Stop existing observer if running
+                if self._observer is not None:
+                    self._observer.stop()
+                    self._observer.join()
+                    self._observer = None
+
+                # Update internal state from new settings
+                self._settings = new_settings
+                self._profile = new_settings.profile
+                self._debounce_delay = new_settings.debounce_seconds
+                self._paths = watcher.build_watched_files(new_settings.watched_paths, new_settings.profile)
+                self._has_paths = bool(new_settings.watched_paths)
+
+                # Start observer if we have paths
+                if self._has_paths:
+                    self._observer = Observer()
+                    self.start_watching(self._observer)
+                    self._set_status(_STATUS_WATCHING)
+                    self._log('Watching resumed with updated settings.')
+                else:
+                    self._set_status(_STATUS_PAUSED)
+                    self._log('No credential files configured. App is now paused.')
+            else:
+                # Only DB path changed (or nothing changed at all)
+                self._settings = new_settings
+        except Exception as exc:
+            self._log(f'Error applying settings: {exc}')
+            messagebox.showerror('Settings Error', f'Failed to apply settings: {exc}')
 
     def start_watching(self, observer: BaseObserver) -> None:
         handler = WrappedCredentialsFileEventHandler(self._paths, self._storage,
@@ -404,15 +691,8 @@ def main() -> None:
             'credential files for changes and imports them automatically.'
         )
     )
-    parser.add_argument('--profile', default='default',
-                        help='Profile name to import credentials from')
     parser.add_argument('--debug', action='store_true',
                         help='Enable debug logging')
-    parser.add_argument('--debounce', metavar='SECONDS', type=float,
-                        default=watcher._DEFAULT_DEBOUNCE_DELAY,
-                        help='Seconds to wait after a change before importing '
-                             f'(default: {watcher._DEFAULT_DEBOUNCE_DELAY})')
-    parser.add_argument('paths', nargs='*', help='Credential file(s) to watch (optional; app will run paused if none provided)')
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -420,6 +700,5 @@ def main() -> None:
         format='%(asctime)s %(levelname)s %(name)s: %(message)s',
     )
 
-    storage = get_storage(DB_PATH)
-    app = CredentialTrayApp(args.paths, storage, args.profile, args.debounce)
+    app = CredentialTrayApp()
     app.start()
