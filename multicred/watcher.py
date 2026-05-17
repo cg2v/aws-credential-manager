@@ -84,11 +84,11 @@ class CredentialFileEventHandler(FileSystemEventHandler):
 
     def on_modified(self, event: FileModifiedEvent):
         if not event.is_directory:
-            self._try_import(event.src_path)
+            self._try_import(os.fsdecode(event.src_path))
 
     def on_created(self, event: FileCreatedEvent):
         if not event.is_directory:
-            self._try_import(event.src_path)
+            self._try_import(os.fsdecode(event.src_path))
 
 
 def build_watched_files(paths: list[str], profile: str) -> dict[str, str]:
