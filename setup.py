@@ -28,6 +28,8 @@ setup(
         'sqlalchemy',
         'boto3',
         'watchdog',
+        'pystray>=0.19',
+        'Pillow>=10.0',
     ],
     entry_points={
         'console_scripts': [
@@ -35,6 +37,7 @@ setup(
             'multicred-get = multicred.credhelper:main',
             'multicred-manage = multicred.manager:main',
             'multicred-watch = multicred.watcher:main',
+            'multicred-tray = multicred.trayapp:main',
         ],
     },
 )
