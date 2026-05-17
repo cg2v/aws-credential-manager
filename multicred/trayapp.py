@@ -212,11 +212,13 @@ class CredentialTrayApp:
         self._storage = storage
         self._profile = profile
         self._debounce_delay = debounce_delay
+        self._has_paths = bool(paths)  # Track if we were given paths
 
         self._stop_event = threading.Event()
 
         self._log_queue: queue.Queue[str] = queue.Queue()
-        self._status = _STATUS_WATCHING
+        # Start paused if no paths provided; otherwise start watching
+        self._status = _STATUS_PAUSED if not self._has_paths else _STATUS_WATCHING
         self._log_window: LogWindow | None = None
         self._icon: Any | None = None
         self._root: tk.Tk | None = None  # tkinter root; set in start()
@@ -238,13 +240,17 @@ class CredentialTrayApp:
 
         self._icon = pystray.Icon(
             'MulticredTray',
-            icon=_create_icon_image(_STATUS_WATCHING),
-            title=_STATUS_TOOLTIPS[_STATUS_WATCHING],
+            icon=_create_icon_image(self._status),
+            title=_STATUS_TOOLTIPS[self._status],
             menu=self._create_menu(),
         )
 
-        self._observer = Observer()
-        self.start_watching(self._observer)
+        # Only start observing if we have paths
+        if self._has_paths:
+            self._observer = Observer()
+            self.start_watching(self._observer)
+        else:
+            self._log('No credential files to watch. App is paused. Enable watching via the menu once paths are configured.')
 
         # pystray runs in its own thread; we keep tkinter on the main thread.
         self._icon.run_detached()
@@ -310,6 +316,9 @@ class CredentialTrayApp:
 
     def _on_pause_resume(self, icon=None, item=None) -> None:
         if self._observer is None:
+            if not self._has_paths:
+                self._log('Cannot resume watching: no credential files configured.')
+                return
             self._observer = Observer()
             self.start_watching(self._observer)
             self._set_status(_STATUS_WATCHING)
@@ -403,7 +412,7 @@ def main() -> None:
                         default=watcher._DEFAULT_DEBOUNCE_DELAY,
                         help='Seconds to wait after a change before importing '
                              f'(default: {watcher._DEFAULT_DEBOUNCE_DELAY})')
-    parser.add_argument('paths', nargs='+', help='Credential file(s) to watch')
+    parser.add_argument('paths', nargs='*', help='Credential file(s) to watch (optional; app will run paused if none provided)')
     args = parser.parse_args()
 
     logging.basicConfig(
