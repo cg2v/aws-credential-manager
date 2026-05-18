@@ -41,6 +41,12 @@ class CredentialFileEventHandler(FileSystemEventHandler):
         self._pending_timers: dict[str, threading.Timer] = {}
         self._lock = threading.Lock()
 
+    def log(self, message: str, *args):
+        logger.info(message, *args)
+
+    def error(self, message: str, *args):
+        logger.error(message, *args)
+
     def _schedule_import(self, abs_path: str, profile: str):
         """Cancel any existing debounce timer for *abs_path* and start a new one."""
         with self._lock:
@@ -52,18 +58,20 @@ class CredentialFileEventHandler(FileSystemEventHandler):
             self._pending_timers[abs_path] = timer
             timer.start()
 
-    def _do_import(self, abs_path: str, profile: str):
+    def _do_import(self, abs_path: str, profile: str) -> bool:
         """Execute the import after the debounce window expires."""
         with self._lock:
             self._pending_timers.pop(abs_path, None)
-        logger.info('Importing credentials from %s (profile: %s)', abs_path, profile)
+        self.log('Importing credentials from %s (profile: %s)', abs_path, profile)
         try:
             do_import(abs_path, self._storage, profile)
-            logger.info('Successfully imported credentials from %s', abs_path)
+            self.log('Successfully imported credentials from %s', abs_path)
+            return True
         except DuplicateCredentialsError as e:
-            logger.info('Credentials from %s are already present, skipping: %s', abs_path, e)
+            self.log('Credentials from %s are already present, skipping: %s', abs_path, e)
         except Exception as e:
-            logger.error('Failed to import credentials from %s: %s', abs_path, e)
+            self.error('Failed to import credentials from %s: %s', abs_path, e)
+        return False
 
     def _try_import(self, path: str):
         abs_path = os.path.abspath(path)
@@ -76,11 +84,11 @@ class CredentialFileEventHandler(FileSystemEventHandler):
 
     def on_modified(self, event: FileModifiedEvent):
         if not event.is_directory:
-            self._try_import(event.src_path)
+            self._try_import(os.fsdecode(event.src_path))
 
     def on_created(self, event: FileCreatedEvent):
         if not event.is_directory:
-            self._try_import(event.src_path)
+            self._try_import(os.fsdecode(event.src_path))
 
 
 def build_watched_files(paths: list[str], profile: str) -> dict[str, str]:

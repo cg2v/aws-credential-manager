@@ -1,3 +1,5 @@
+import sys
+
 from setuptools import setup, find_packages
 
 # Loads _version.py module without importing the whole package.
@@ -18,6 +20,18 @@ def get_version_and_cmdclass(pkg_path):
 
 version, cmdclass = get_version_and_cmdclass('multicred')
 
+entry_points = {
+    'console_scripts': [
+        'multicred-import = multicred.importer:main',
+        'multicred-get = multicred.credhelper:main',
+        'multicred-manage = multicred.manager:main',
+        'multicred-watch = multicred.watcher:main',
+    ]
+}
+if sys.platform.startswith('win'):
+    entry_points['gui_scripts'] = [
+        'multicred-tray = multicred.trayapp:main',
+    ]
 setup(
     name='multicred',
     version=version,
@@ -28,13 +42,8 @@ setup(
         'sqlalchemy',
         'boto3',
         'watchdog',
+        'pystray>=0.19; platform_system=="Windows"',
+        'Pillow>=10.0; platform_system=="Windows"',
     ],
-    entry_points={
-        'console_scripts': [
-            'multicred-import = multicred.importer:main',
-            'multicred-get = multicred.credhelper:main',
-            'multicred-manage = multicred.manager:main',
-            'multicred-watch = multicred.watcher:main',
-        ],
-    },
+    entry_points=entry_points,
 )
