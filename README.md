@@ -1,6 +1,9 @@
 # aws-credential-manager
 Credential manager and tools for switching between multiple sets of AWS ephemeral credentials (as from SAML)
 
+## Partial Obsolescence
+The AWS CLI now has [Login for AWS local development using console credentials](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-sign-in.html), which makes it possible to get CLI credentials without the browser extension or having to manage the files. This code is still somewhat useful for managing multiple sets of credentials without having to track the profiles every time you run `aws login`, but the basic use case is now covered.
+
 ## Rationale
 I have to juggle between aws credentials corresponding to multiple accounts (experimentation, shared dev, prod, whatever QA we will have in the future.), and sometimes multiple privilege levels
 
@@ -30,6 +33,10 @@ The importer will inspect a file containing credentials (access key id, secret k
 The credential helper will use command line switches or environment variables to select a target identity, search for that identity, and emit the credentials if they are available.
 - `multicred-manage`  
 A utility script for examining and manipulating the storage
+- `multicred-watch`
+Long-running process to monitor a set of paths and automatically import credentials from them.
+- `multicred-tray`
+Windows application encapsulating the watch functionality. Fully configurable via GUI.
 
 ## Plan
 
