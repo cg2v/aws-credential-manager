@@ -106,10 +106,24 @@ if not hasattr(_ctypes, 'windll'):
     windll_stub = MagicMock()
     _ctypes.windll = windll_stub
 
-# Stub tkinter.filedialog (used by SettingsPane)
-from tkinter import filedialog as _filedialog_module
+# Stub tkinter sub-modules that require a display / root window.
+# These are imported directly by trayapp (from tkinter import filedialog, messagebox)
+# and will fail on headless Linux if left as real tkinter objects.
+import tkinter as _tkinter_module
+_tkinter_module.filedialog = MagicMock()
+_tkinter_module.filedialog.asksaveasfilename = MagicMock(return_value='')
+_tkinter_module.filedialog.askopenfilename = MagicMock(return_value='')
+
+import tkinter.filedialog as _filedialog_module
 _filedialog_module.asksaveasfilename = MagicMock(return_value='')
 _filedialog_module.askopenfilename = MagicMock(return_value='')
+
+# Stub tkinter.messagebox so showwarning/showerror/showinfo never open a real Tk window.
+import tkinter.messagebox as _messagebox_module
+_messagebox_module.showwarning = MagicMock()
+_messagebox_module.showinfo = MagicMock()
+_messagebox_module.showerror = MagicMock()
+_messagebox_module.askyesno = MagicMock(return_value=True)
 
 from multicred import trayapp  # noqa: E402 — must come after stubs
 
@@ -377,22 +391,58 @@ class TestSettingsPane:
         app.apply_settings = MagicMock()
         return app
 
+    def _make_tk_mock(self):
+        """Create a tk mock where StringVar and Listbox track state correctly."""
+        class FakeStringVar:
+            def __init__(self):
+                self._value = ''
+            def get(self):
+                return self._value
+            def set(self, v):
+                self._value = v
+
+        class FakeListbox:
+            def __init__(self, *a, **kw):
+                self._items = []
+            def insert(self, idx, value):
+                self._items.append(value)
+            def delete(self, start, end=None):
+                if end is None:
+                    if 0 <= start < len(self._items):
+                        del self._items[start]
+                else:
+                    self._items.clear()
+            def get(self, start, end=None):
+                return tuple(self._items)
+            def curselection(self):
+                return ()
+            def pack(self, **kw): pass
+            def config(self, **kw): pass
+            def yview(self, *a): pass
+
+        tk_mock = MagicMock()
+        tk_mock.StringVar.side_effect = FakeStringVar
+        tk_mock.Listbox.side_effect = FakeListbox
+        tk_mock.END = 'end'
+        return tk_mock
+
+    def _make_settings(self):
+        return trayapp.TraySettings(
+            db_path='sqlite:///test.db',
+            profile='default',
+            debounce_seconds=5.0,
+            watched_paths=[],
+        )
+
     def test_settings_pane_save_validates_debounce(self):
         """Test that _save rejects non-positive debounce values."""
         root = MagicMock()
         app = self._make_app_mock()
 
-        with patch.object(trayapp, 'tk'), \
-             patch.object(trayapp, 'load_settings') as mock_load, \
+        with patch.object(trayapp, 'tk', self._make_tk_mock()), \
+             patch.object(trayapp, 'load_settings', return_value=self._make_settings()), \
              patch.object(trayapp.messagebox, 'showwarning') as mock_warn:
-            mock_load.return_value = trayapp.TraySettings(
-                db_path='sqlite:///test.db',
-                profile='default',
-                debounce_seconds=5.0,
-                watched_paths=[],
-            )
             pane = trayapp.SettingsPane(root, app)
-            # Simulate invalid input
             pane._debounce_var.set('-1')
             pane._save()
             mock_warn.assert_called()
@@ -402,18 +452,12 @@ class TestSettingsPane:
         root = MagicMock()
         app = self._make_app_mock()
 
-        with patch.object(trayapp, 'tk'), \
-             patch.object(trayapp, 'load_settings') as mock_load, \
+        with patch.object(trayapp, 'tk', self._make_tk_mock()), \
+             patch.object(trayapp, 'load_settings', return_value=self._make_settings()), \
              patch.object(trayapp.messagebox, 'showwarning') as mock_warn:
-            mock_load.return_value = trayapp.TraySettings(
-                db_path='sqlite:///test.db',
-                profile='default',
-                debounce_seconds=5.0,
-                watched_paths=[],
-            )
             pane = trayapp.SettingsPane(root, app)
-            # Simulate empty DB path
             pane._db_path_var.set('')
+            pane._debounce_var.set('5.0')
             pane._save()
             mock_warn.assert_called()
 
@@ -422,26 +466,16 @@ class TestSettingsPane:
         root = MagicMock()
         app = self._make_app_mock()
 
-        with patch.object(trayapp, 'tk'), \
-             patch.object(trayapp, 'load_settings') as mock_load, \
+        with patch.object(trayapp, 'tk', self._make_tk_mock()), \
+             patch.object(trayapp, 'load_settings', return_value=self._make_settings()), \
              patch.object(trayapp, 'save_settings') as mock_save, \
              patch.object(trayapp.messagebox, 'showinfo'):
-            mock_load.return_value = trayapp.TraySettings(
-                db_path='sqlite:///test.db',
-                profile='default',
-                debounce_seconds=5.0,
-                watched_paths=[],
-            )
             pane = trayapp.SettingsPane(root, app)
-            # Set valid values
             pane._db_path_var.set('sqlite:///new.db')
             pane._profile_var.set('default')
             pane._debounce_var.set('3.0')
             pane._save()
-
-            # Verify save_settings was called
             mock_save.assert_called_once()
-            # Verify apply_settings was called
             app.apply_settings.assert_called_once()
 
     def test_settings_pane_cancel_hides(self):
@@ -449,14 +483,8 @@ class TestSettingsPane:
         root = MagicMock()
         app = self._make_app_mock()
 
-        with patch.object(trayapp, 'tk'), \
-             patch.object(trayapp, 'load_settings') as mock_load:
-            mock_load.return_value = trayapp.TraySettings(
-                db_path='sqlite:///test.db',
-                profile='default',
-                debounce_seconds=5.0,
-                watched_paths=[],
-            )
+        with patch.object(trayapp, 'tk', self._make_tk_mock()), \
+             patch.object(trayapp, 'load_settings', return_value=self._make_settings()):
             pane = trayapp.SettingsPane(root, app)
             pane._window = MagicMock()
             pane._cancel()
