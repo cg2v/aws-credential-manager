@@ -267,6 +267,12 @@ class TestWrappedHandler:
         handler.log('hello world')
         assert messages == ['hello world']
 
+    def test_log_formats_percent_style_arguments(self):
+        messages = []
+        handler = self._make_handler(logfunc=messages.append)
+        handler.log('imported %s (%s)', 'file', 'default')
+        assert messages == ['imported file (default)']
+
     def test_error_routes_to_logfunc(self):
         messages = []
         handler = self._make_handler(logfunc=messages.append)
