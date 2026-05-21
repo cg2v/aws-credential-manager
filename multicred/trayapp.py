@@ -416,7 +416,7 @@ class WrappedCredentialsFileEventHandler(watcher.CredentialFileEventHandler):
         super().__init__(*args, **kwargs)
 
     def log(self, message: str, *args):
-        self.logfunc(message.format(*args))
+        self.logfunc(message % args if args else message)
 
     error = log
 
