@@ -29,7 +29,7 @@ setup(
         'boto3',
         'watchdog',
         'pystray>=0.19; platform_system=="Windows"',
-        'Pillow>=10.0; platform_system=="Windows"',
+        'Pillow>=12.2; platform_system=="Windows"',
     ],
     entry_points={
         'console_scripts': [
