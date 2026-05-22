@@ -1,5 +1,6 @@
 import argparse
 import logging
+import sys
 import os
 import threading
 import time
@@ -122,13 +123,47 @@ def run_watcher(watched_files: dict[str, str], storage: Storage,
         observer.stop()
         observer.join()
 
+def gui_launch_impl(parser: argparse.ArgumentParser, args: argparse.Namespace):
+    try:
+        from . import trayapp
+    except ImportError as e:
+        parser.error(f'Failed to import GUI dependencies: {e}')
+    if sys.executable.endswith('pythonw.exe') or os.getenv('MULTICRED_WATCHER_GUI') == '1':
+        # Already running in GUI mode, just start the tray app
+        sys.argv = [sys.argv[0]]  # Clear arguments because the tray app doesn't use them
+        if args.debug:
+            logging.basicConfig(
+                level=logging.DEBUG,
+                format='%(asctime)s %(levelname)s %(name)s: %(message)s')
+        trayapp.main()
+        return
+
+
+    pythonw_path = sys.executable.replace('python.exe', 'pythonw.exe')
+    if not os.path.exists(pythonw_path):
+        parser.error(f'pythonw.exe not found at expected location: {pythonw_path}')
+    script_path = os.path.abspath(sys.argv[0])
+    if not os.path.exists(script_path) and not script_path.endswith('.exe'):
+        script_path = script_path + '.exe'
+    if not os.path.exists(script_path):
+        parser.error(f'Watcher script not found at expected location: {script_path}')
+    # Relaunch the script with pythonw.exe to avoid opening a console window
+    arglist = [pythonw_path, script_path]
+    if args.debug:
+        arglist.append('--debug')
+    arglist.append('--gui')
+    arglist.extend(args.cred_files)
+    os.spawnv(os.P_NOWAIT, pythonw_path, arglist)
 
 def main():
     parser = argparse.ArgumentParser(
         description='Watch credential files for changes and import them automatically')
+    parser.add_argument('--debug', help='Enable debug logging', action='store_true')
+    if sys.platform.startswith('win'):
+        parser.add_argument('--gui', action='store_true', default=False,
+                            help='Show a system tray icon instead of logging to console')
     parser.add_argument('--profile', help='Profile name to import credentials from',
                         default='default')
-    parser.add_argument('--debug', help='Enable debug logging', action='store_true')
     parser.add_argument('--debounce', metavar='SECONDS', type=float,
                         default=_DEFAULT_DEBOUNCE_DELAY,
                         help='Seconds to wait after a change before importing '
@@ -136,6 +171,10 @@ def main():
     parser.add_argument('cred_files', metavar='cred_file', nargs='+',
                         help='File(s) to watch for credential changes')
     args = parser.parse_args()
+
+    if sys.platform.startswith('win') and args.gui:
+        gui_launch_impl(parser, args)
+        return
 
     logging.basicConfig(
         level=logging.DEBUG if args.debug else logging.INFO,
