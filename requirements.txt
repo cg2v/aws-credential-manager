@@ -1,6 +1,6 @@
 boto3==1.43.9
 botocore==1.43.9
-chardet==5.2.0
+chardet==7.4.3
 greenlet==3.5.0
 jmespath==1.1.0
 Pillow==12.2.0; platform_system=="Windows"
