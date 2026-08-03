@@ -50,6 +50,11 @@ _SETTINGS_KEY = r'Software\Multicred\TrayApp'
 _ICON_SIZE = 64
 _LOG_QUEUE_POLL_MS = 200
 
+# Windows message constants for shutdown/session-end handling.
+_WM_QUERYENDSESSION = 0x0011
+_WM_ENDSESSION = 0x0016
+_GWLP_WNDPROC = -4
+
 # Tray icon status values
 _STATUS_WATCHING = 'watching'   # green
 _STATUS_PAUSED = 'paused'       # yellow
@@ -461,6 +466,10 @@ class CredentialTrayApp:
         self._icon: Any | None = None
         self._root: tk.Tk | None = None  # tkinter root; set in start()
         self._observer: BaseObserver | None = None  # watchdog observer; set in start()
+        self._session_end_in_progress = False
+        self._wndproc_callback = None
+        self._original_wndproc = None
+        self._root_hwnd = None
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -473,6 +482,7 @@ class CredentialTrayApp:
         self._root = tk.Tk()
         self._root.withdraw()  # hide the root window; we only want the tray
         self._root.title('MulticredTray')
+        self._install_shutdown_message_handler()
 
         self._log_window = LogWindow(self._root)
         self._settings_pane = SettingsPane(self._root, self)
@@ -501,6 +511,7 @@ class CredentialTrayApp:
             self._root.mainloop()
         finally:
             self._stop_event.set()
+            self._uninstall_shutdown_message_handler()
             if self._icon:
                 self._icon.stop()
 
@@ -583,10 +594,81 @@ class CredentialTrayApp:
 
     def _on_quit(self, icon=None, item=None) -> None:
         self._stop_event.set()
+        self._stop_observer(join_timeout=2.0)
         if self._icon:
             self._icon.stop()
         if self._root:
             self._root.after(0, self._root.quit)
+
+    def _stop_observer(self, join_timeout: float | None = None) -> None:
+        observer = self._observer
+        if observer is None:
+            return
+        observer.stop()
+        if join_timeout is None:
+            observer.join()
+        else:
+            observer.join(timeout=join_timeout)
+        self._observer = None
+
+    def _handle_windows_message(self, message: int, wparam: int) -> int | None:
+        if message == _WM_QUERYENDSESSION:
+            # Explicitly allow shutdown to continue.
+            return 1
+        if message == _WM_ENDSESSION:
+            if bool(wparam) and not self._session_end_in_progress:
+                self._session_end_in_progress = True
+                if self._root:
+                    self._root.after(0, self._on_quit)
+                else:
+                    self._on_quit()
+            # Return value is ignored for WM_ENDSESSION.
+            return 0
+        return None
+
+    def _install_shutdown_message_handler(self) -> None:
+        if not self._root or os.name != 'nt':
+            return
+        user32 = getattr(getattr(ctypes, 'windll', None), 'user32', None)
+        if user32 is None:
+            return
+
+        hwnd = self._root.winfo_id()
+        set_wndproc = user32.SetWindowLongPtrW
+        set_wndproc.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p]
+        set_wndproc.restype = ctypes.c_void_p
+        call_wndproc = user32.CallWindowProcW
+        call_wndproc.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint, ctypes.c_size_t, ctypes.c_ssize_t]
+        call_wndproc.restype = ctypes.c_ssize_t
+
+        @ctypes.WINFUNCTYPE(ctypes.c_ssize_t, ctypes.c_void_p, ctypes.c_uint, ctypes.c_size_t, ctypes.c_ssize_t)
+        def wndproc(hwnd_arg, msg, wparam, lparam):
+            handled = self._handle_windows_message(msg, wparam)
+            if handled is not None:
+                return handled
+            return call_wndproc(self._original_wndproc, hwnd_arg, msg, wparam, lparam)
+
+        original = set_wndproc(hwnd, _GWLP_WNDPROC, wndproc)
+        if original:
+            self._root_hwnd = hwnd
+            self._original_wndproc = original
+            self._wndproc_callback = wndproc
+
+    def _uninstall_shutdown_message_handler(self) -> None:
+        if os.name != 'nt':
+            return
+        if not self._root_hwnd or not self._original_wndproc:
+            return
+        user32 = getattr(getattr(ctypes, 'windll', None), 'user32', None)
+        if user32 is None:
+            return
+        set_wndproc = user32.SetWindowLongPtrW
+        set_wndproc.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p]
+        set_wndproc.restype = ctypes.c_void_p
+        set_wndproc(self._root_hwnd, _GWLP_WNDPROC, self._original_wndproc)
+        self._wndproc_callback = None
+        self._original_wndproc = None
+        self._root_hwnd = None
 
     def apply_settings(self, new_settings: TraySettings) -> None:
         """Apply new settings: update storage, paths, and observer as needed."""

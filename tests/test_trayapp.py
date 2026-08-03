@@ -378,12 +378,45 @@ class TestQuit:
         app = _make_app_for_testing()
         app._icon = MagicMock()
         mock_root = MagicMock()
+        mock_observer = MagicMock()
         app._root = mock_root
+        app._observer = mock_observer
 
         app._on_quit()
         assert app._stop_event.is_set()
+        mock_observer.stop.assert_called_once()
+        mock_observer.join.assert_called_once_with(timeout=2.0)
+        assert app._observer is None
         app._icon.stop.assert_called_once()
         mock_root.after.assert_called_once()
+
+
+class TestWindowsShutdownMessages:
+    def test_query_end_session_allows_shutdown(self):
+        app = _make_app_for_testing()
+        rv = app._handle_windows_message(trayapp._WM_QUERYENDSESSION, 1)
+        assert rv == 1
+
+    def test_end_session_with_wparam_true_schedules_quit_once(self):
+        app = _make_app_for_testing()
+        app._root = MagicMock()
+
+        rv1 = app._handle_windows_message(trayapp._WM_ENDSESSION, 1)
+        rv2 = app._handle_windows_message(trayapp._WM_ENDSESSION, 1)
+
+        assert rv1 == 0
+        assert rv2 == 0
+        assert app._session_end_in_progress is True
+        app._root.after.assert_called_once_with(0, app._on_quit)
+
+    def test_end_session_with_wparam_false_does_not_schedule_quit(self):
+        app = _make_app_for_testing()
+        app._root = MagicMock()
+
+        rv = app._handle_windows_message(trayapp._WM_ENDSESSION, 0)
+
+        assert rv == 0
+        app._root.after.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
