@@ -31,7 +31,7 @@ s3transfer==0.19.2
 six==1.16.0
 SQLAlchemy==2.0.51
 types-awscrt==0.20.9
-typing_extensions==4.13.2
+typing_extensions==4.16.0
 urllib3==2.7.0
 Werkzeug==3.1.8
 xmltodict==1.0.4
