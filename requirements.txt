@@ -7,6 +7,7 @@ Pillow==12.2.0; platform_system=="Windows"
 python-dateutil==2.9.0.post0
 s3transfer==0.17.0
 pystray==0.19.5; platform_system=="Windows"
+pywinauto==0.6.9; platform_system=="Windows"
 six==1.16.0
 SQLAlchemy==2.0.46
 typing_extensions==4.13.2

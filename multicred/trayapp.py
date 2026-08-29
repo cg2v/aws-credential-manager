@@ -37,6 +37,7 @@ from watchdog.observers import Observer
 from watchdog.observers.api import BaseObserver
 import pystray
 from PIL import Image, ImageDraw
+import pywinauto
 
 from . import get_storage
 from . import watcher
@@ -634,6 +635,15 @@ class CredentialTrayApp:
             return
 
         hwnd = self._root.winfo_id()
+        app = pywinauto.Application(backend="uia").connect(handle=hwnd)
+        element = app.window(handle=hwnd)
+
+        # Read the true visual parent container from the UIA engine
+        # it's not the actual Tkinter root window, but it is one that will
+        # receive the WM_QUERYENDSESSION and WM_ENDSESSION messages.
+        true_parent_element = element.parent()
+        print("Parent HWND:", true_parent_element.handle)
+        self._log(f'Installing Windows message handler for shutdown/session-end on hwnd={true_parent_element.handle:#x}, not hwnd={hwnd:#x}')
         set_wndproc = user32.SetWindowLongPtrW
         set_wndproc.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p]
         set_wndproc.restype = ctypes.c_void_p
@@ -648,9 +658,9 @@ class CredentialTrayApp:
                 return handled
             return call_wndproc(self._original_wndproc, hwnd_arg, msg, wparam, lparam)
 
-        original = set_wndproc(hwnd, _GWLP_WNDPROC, wndproc)
+        original = set_wndproc(true_parent_element.handle, _GWLP_WNDPROC, wndproc)
         if original:
-            self._root_hwnd = hwnd
+            self._root_hwnd = true_parent_element.handle
             self._original_wndproc = original
             self._wndproc_callback = wndproc
 
