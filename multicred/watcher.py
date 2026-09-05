@@ -168,13 +168,16 @@ def main():
                         default=_DEFAULT_DEBOUNCE_DELAY,
                         help='Seconds to wait after a change before importing '
                              f'(default: {_DEFAULT_DEBOUNCE_DELAY})')
-    parser.add_argument('cred_files', metavar='cred_file', nargs='+',
+    parser.add_argument('cred_files', metavar='cred_file', nargs='*',
                         help='File(s) to watch for credential changes')
     args = parser.parse_args()
 
     if sys.platform.startswith('win') and args.gui:
         gui_launch_impl(parser, args)
         return
+
+    if not args.cred_files:
+        parser.error('At least one credential file must be specified')
 
     logging.basicConfig(
         level=logging.DEBUG if args.debug else logging.INFO,
