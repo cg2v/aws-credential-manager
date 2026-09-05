@@ -473,6 +473,8 @@ class CredentialTrayApp:
         self._root = tk.Tk()
         self._root.withdraw()  # hide the root window; we only want the tray
         self._root.title('MulticredTray')
+        self._root.update()
+        self._root.protocol('WM_SAVE_YOURSELF', self._on_quit)
 
         self._log_window = LogWindow(self._root)
         self._settings_pane = SettingsPane(self._root, self)
