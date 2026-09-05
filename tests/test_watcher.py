@@ -12,6 +12,7 @@ from multicred.dbstorage import DBStorage
 from multicred.watcher import (
     CredentialFileEventHandler,
     build_watched_files,
+    gui_launch_impl,
     run_watcher,
 )
 
@@ -269,3 +270,56 @@ def test_run_watcher_detects_file_change(tmp_path):
         assert imported_event.wait(timeout=5), "do_import was not called within the expected time"
 
     assert os.path.abspath(cred_file) in imported_files
+
+
+# ---------------------------------------------------------------------------
+# gui_launch_impl
+# ---------------------------------------------------------------------------
+
+def test_gui_launch_impl_spawns_detached_process(tmp_path):
+    parser = MagicMock()
+    args = MagicMock(debug=False)
+
+    fake_pythonw = str(tmp_path / 'pythonw.exe')
+    with open(fake_pythonw, 'w') as f:
+        f.write('')
+
+    with patch('multicred.watcher.sys.executable', str(tmp_path / 'python.exe')), \
+         patch('multicred.watcher.sys.platform', 'win32'), \
+         patch('multicred.watcher.Popen') as mock_popen:
+        gui_launch_impl(parser, args)
+
+        mock_popen.assert_called_once()
+        call_args, call_kwargs = mock_popen.call_args
+        assert call_args[0] == [fake_pythonw, '-m', 'multicred.trayapp']
+        assert call_kwargs.get('close_fds') is True
+        assert call_kwargs.get('creationflags', 0) != 0
+
+
+def test_gui_launch_impl_debug_flag(tmp_path):
+    parser = MagicMock()
+    args = MagicMock(debug=True)
+
+    fake_pythonw = str(tmp_path / 'pythonw.exe')
+    with open(fake_pythonw, 'w') as f:
+        f.write('')
+
+    with patch('multicred.watcher.sys.executable', str(tmp_path / 'python.exe')), \
+         patch('multicred.watcher.sys.platform', 'win32'), \
+         patch('multicred.watcher.Popen') as mock_popen:
+        gui_launch_impl(parser, args)
+
+        mock_popen.assert_called_once()
+        call_args, _ = mock_popen.call_args
+        assert call_args[0] == [fake_pythonw, '-m', 'multicred.trayapp', '--debug']
+
+
+def test_gui_launch_impl_missing_pythonw(tmp_path):
+    parser = MagicMock()
+    args = MagicMock(debug=False)
+
+    with patch('multicred.watcher.sys.executable', str(tmp_path / 'python.exe')):
+        gui_launch_impl(parser, args)
+        parser.error.assert_called_once()
+        assert 'pythonw.exe not found' in parser.error.call_args[0][0]
+
