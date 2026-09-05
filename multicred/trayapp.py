@@ -704,3 +704,7 @@ def main() -> None:
 
     app = CredentialTrayApp()
     app.start()
+
+
+if __name__ == '__main__':
+    main()

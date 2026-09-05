@@ -1,9 +1,11 @@
 import argparse
 import logging
-import sys
 import os
+import subprocess
+import sys
 import threading
 import time
+from subprocess import Popen
 
 from watchdog.events import FileSystemEventHandler, FileModifiedEvent, FileCreatedEvent
 from watchdog.observers import Observer
@@ -138,22 +140,33 @@ def gui_launch_impl(parser: argparse.ArgumentParser, args: argparse.Namespace):
         trayapp.main()
         return
 
+    # Find pythonw.exe in the same directory as the running Python interpreter or in PATH
+    python_dir = os.path.dirname(sys.executable)
+    candidates = [
+        os.path.join(python_dir, 'pythonw.exe'),
+        sys.executable.replace('python.exe', 'pythonw.exe'),
+    ]
+    pythonw_path = next((p for p in candidates if os.path.isfile(p)), None)
 
-    pythonw_path = sys.executable.replace('python.exe', 'pythonw.exe')
-    if not os.path.exists(pythonw_path):
-        parser.error(f'pythonw.exe not found at expected location: {pythonw_path}')
-    script_path = os.path.abspath(sys.argv[0])
-    if not os.path.exists(script_path) and not script_path.endswith('.exe'):
-        script_path = script_path + '.exe'
-    if not os.path.exists(script_path):
-        parser.error(f'Watcher script not found at expected location: {script_path}')
-    # Relaunch the script with pythonw.exe to avoid opening a console window
-    arglist = [pythonw_path, script_path]
+    if not pythonw_path or not os.path.exists(pythonw_path):
+        parser.error(f'pythonw.exe not found at expected location: {os.path.join(python_dir, "pythonw.exe")}')
+        return
+
+    arglist = [pythonw_path, '-m', 'multicred.trayapp']
     if args.debug:
         arglist.append('--debug')
-    arglist.append('--gui')
-    arglist.extend(args.cred_files)
-    os.spawnv(os.P_NOWAIT, pythonw_path, arglist)
+
+    creationflags = 0
+    if sys.platform.startswith('win'):
+        creationflags = (
+            getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0x00000200)
+        )
+    # pylint: disable=consider-using-with
+    Popen(
+        arglist,
+        close_fds=True,
+        creationflags=creationflags,
+    )
 
 def main():
     parser = argparse.ArgumentParser(
@@ -168,13 +181,16 @@ def main():
                         default=_DEFAULT_DEBOUNCE_DELAY,
                         help='Seconds to wait after a change before importing '
                              f'(default: {_DEFAULT_DEBOUNCE_DELAY})')
-    parser.add_argument('cred_files', metavar='cred_file', nargs='+',
+    parser.add_argument('cred_files', metavar='cred_file', nargs='*',
                         help='File(s) to watch for credential changes')
     args = parser.parse_args()
 
     if sys.platform.startswith('win') and args.gui:
         gui_launch_impl(parser, args)
         return
+
+    if not args.cred_files:
+        parser.error('At least one credential file must be specified')
 
     logging.basicConfig(
         level=logging.DEBUG if args.debug else logging.INFO,
