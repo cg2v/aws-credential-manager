@@ -10,5 +10,5 @@ pystray==0.19.5; platform_system=="Windows"
 six==1.16.0
 SQLAlchemy==2.0.51
 typing_extensions==4.16.0
-urllib3==2.7.0
+urllib3==2.8.0
 watchdog==6.0.0
