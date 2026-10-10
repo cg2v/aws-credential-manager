@@ -157,15 +157,21 @@ def gui_launch_impl(parser: argparse.ArgumentParser, args: argparse.Namespace):
         arglist.append('--debug')
 
     creationflags = 0
+    startupinfo = None
     if sys.platform.startswith('win'):
         creationflags = (
-            getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0x00000200)
+            getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0x00000200) |
+            getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000)
         )
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+
     # pylint: disable=consider-using-with
     Popen(
         arglist,
         close_fds=True,
         creationflags=creationflags,
+        startupinfo=startupinfo,
     )
 
 def main():
